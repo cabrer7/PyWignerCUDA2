@@ -140,6 +140,8 @@ class GPU_Wigner4D:
 
 		self.CUDA_constants +=  '\n'		
 
+		print self.CUDA_constants
+
 		#...........................................................................
 
 		print '         GPU memory Total               ', pycuda.driver.mem_get_info()[1]/float(2**30) , 'GB'
@@ -269,16 +271,23 @@ class GPU_Wigner4D:
 
 		map_expr = "pycuda::real<double>( dx*(i%gridDIM_x-gridDIM_x/2)*W[i] )"
 
+		self.Average_x_GPU_ = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( dx*( (i%gridDIM_x) - gridDIM_x/2 )*dx*dy*dp_x*dp_y*W[i])",
+        			arguments= "pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
+
+
 		self.Average_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
-				map_expr = "pycuda::real<double>( dx*dy*dp_x*dp_y*W[i] )",
-        			arguments="pycuda::complex<double> *W",
+				map_expr = "pycuda::real<double>( dx*(i%gridDIM_x - 0.5*gridDIM_x )*dx*dy*dp_x*dp_y*W[i] )",
+        			arguments= "pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
 
 
 		self.Average_p_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
-				map_expr = "pycuda::real<double>( dp_x*((i/gridDIM_x) % gridDIM_x-gridDIM_x/2)*W[i] )",
+			map_expr = "pycuda::real<double>( dp_x*( ((i/gridDIM_x) % gridDIM_x)-0.5*gridDIM_x)*dx*dy*dp_x*dp_y*W[i] )",
         			arguments="pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
 
