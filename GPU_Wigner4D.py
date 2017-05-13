@@ -235,6 +235,8 @@ class GPU_Wigner4D:
 
 		# Kinetic propagator ................................................................................
 
+		kineticStringC = '__device__ double K(double p_x, double p_y){ \n return '+self.kineticString+';\n}'
+
 		self.exp_p_lambda_GPU = ElementwiseKernel(
 			""" pycuda::complex<double> *B """
 			,
@@ -242,11 +244,11 @@ class GPU_Wigner4D:
 			double  r  = exp( - dt*D_lambda_y * lambda_x*lambda_x );
 	 			r *= exp( - dt*D_lambda_y * lambda_y*lambda_y );
  
-			double phase = dt*lambda_x*p_x/mass + dt*lambda_y*p_y/mass;
+			double phase  = dt*K(p_x + 0.5*lambda_x, p_y + 0.5*lambda_y) - dt*K(p_x - 0.5*lambda_x, p_y - 0.5*lambda_y);
 			B[i] *= pycuda::complex<double>( r*cos(phase), -r*sin(phase) );
 
 			"""
-  		       ,"exp_p_lambda_GPU", preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants )  
+  		       ,"exp_p_lambda_GPU", preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants +kineticStringC )  
 		
 		#  Potential propagator ..............................................................................
 
@@ -269,28 +271,32 @@ class GPU_Wigner4D:
 
 		# Ehrenfest theorems .................................................................................
 
-		map_expr = "pycuda::real<double>( dx*(i%gridDIM_x-gridDIM_x/2)*W[i] )"
+		x_Define    = "\n#define x(i)    dx*( (i%gridDIM_x) - 0.5*gridDIM_x )\n"
+		p_x_Define  = "\n#define p_x(i)  dp_x*( ((i/gridDIM_x) % gridDIM_x)-0.5*gridDIM_x)\n"
 
-		self.Average_x_GPU_ = reduction.ReductionKernel( np.float64, neutral="0",
-        			reduce_expr="a+b", 
-				map_expr = "pycuda::real<double>( dx*( (i%gridDIM_x) - gridDIM_x/2 )*dx*dy*dp_x*dp_y*W[i])",
-        			arguments= "pycuda::complex<double> *W",
-				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
+		y_Define    = "\ndy  *( (i/(gridDIM_x*gridDIM_x)) % gridDIM_y  - 0.5*gridDIM_y)\n"
+		p_y_Define  = "\ndp_y*(  i/(gridDIM_x*gridDIM_x*gridDIM_y) - 0.5*gridDIM_y )\n"
 
 
 		self.Average_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
-				map_expr = "pycuda::real<double>( dx*(i%gridDIM_x - 0.5*gridDIM_x )*dx*dy*dp_x*dp_y*W[i] )",
+				map_expr = "pycuda::real<double>( x(i)*dx*dy*dp_x*dp_y*W[i] )",
         			arguments= "pycuda::complex<double> *W",
-				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
+				preamble = "#define _USE_MATH_DEFINES"+x_Define+self.CUDA_constants)
 
 
 		self.Average_p_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
-			map_expr = "pycuda::real<double>( dp_x*( ((i/gridDIM_x) % gridDIM_x)-0.5*gridDIM_x)*dx*dy*dp_x*dp_y*W[i] )",
+				map_expr = "pycuda::real<double>( p_x(i)*dx*dy*dp_x*dp_y*W[i] )",
         			arguments="pycuda::complex<double> *W",
-				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
+				preamble = "#define _USE_MATH_DEFINES" +p_x_Define+self.CUDA_constants)
 
+
+		self.Energy_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( dx*( (i%gridDIM_x) - gridDIM_x/2 )*dx*dy*dp_x*dp_y*W[i])",
+        			arguments= "pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
 
 	def Gaussian_CPU(x,mu,sigma):
 		return np.exp( - (x-mu)**2/sigma**2/2.  )/(sigma*np.sqrt( 2*np.pi  ))
