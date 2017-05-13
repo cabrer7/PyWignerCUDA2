@@ -274,8 +274,8 @@ class GPU_Wigner4D:
 		x_Define    = "\n#define x(i)    dx*( (i%gridDIM_x) - 0.5*gridDIM_x )\n"
 		p_x_Define  = "\n#define p_x(i)  dp_x*( ((i/gridDIM_x) % gridDIM_x)-0.5*gridDIM_x)\n"
 
-		y_Define    = "\ndy  *( (i/(gridDIM_x*gridDIM_x)) % gridDIM_y  - 0.5*gridDIM_y)\n"
-		p_y_Define  = "\ndp_y*(  i/(gridDIM_x*gridDIM_x*gridDIM_y) - 0.5*gridDIM_y )\n"
+		y_Define    = "\n#define y(i)   dy  *( (i/(gridDIM_x*gridDIM_x)) % gridDIM_y  - 0.5*gridDIM_y)\n"
+		p_y_Define  = "\n#define p_y(i) dp_y*(  i/(gridDIM_x*gridDIM_x*gridDIM_y) - 0.5*gridDIM_y )\n"
 
 
 		self.Average_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
@@ -284,19 +284,29 @@ class GPU_Wigner4D:
         			arguments= "pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES"+x_Define+self.CUDA_constants)
 
-
 		self.Average_p_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
 				map_expr = "pycuda::real<double>( p_x(i)*dx*dy*dp_x*dp_y*W[i] )",
         			arguments="pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES" +p_x_Define+self.CUDA_constants)
 
+		self.Average_y_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( y(i)*dx*dy*dp_x*dp_y*W[i] )",
+        			arguments= "pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES"+y_Define+self.CUDA_constants)
+
+		self.Average_p_y_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( p_y(i)*dx*dy*dp_x*dp_y*W[i] )",
+        			arguments= "pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES"+p_y_Define+self.CUDA_constants)
 
 		self.Energy_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
 				map_expr = "pycuda::real<double>( dx*( (i%gridDIM_x) - gridDIM_x/2 )*dx*dy*dp_x*dp_y*W[i])",
         			arguments= "pycuda::complex<double> *W",
-				preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants)
+				preamble = "#define _USE_MATH_DEFINES"+ self.CUDA_constants)
 
 	def Gaussian_CPU(x,mu,sigma):
 		return np.exp( - (x-mu)**2/sigma**2/2.  )/(sigma*np.sqrt( 2*np.pi  ))
@@ -371,6 +381,9 @@ class GPU_Wigner4D:
 		average_x   = []
 		average_p_x = []
 
+		average_y   = []
+		average_p_y = []
+
 		for tIndex in timeRangeIndex:
 
 			print ' t index = ', tIndex
@@ -380,6 +393,9 @@ class GPU_Wigner4D:
 
 			average_x.append(   self.Average_x_GPU  (W_gpu).get()  )
 			average_p_x.append( self.Average_p_x_GPU(W_gpu).get()  )
+
+			average_y.append(   self.Average_y_GPU  (W_gpu).get()  )
+			average_p_y.append( self.Average_p_y_GPU(W_gpu).get()  )
 
 			# p x  ->  p lambda
 			self.Fourier_X_To_Lambda_GPU( W_gpu )
@@ -402,9 +418,13 @@ class GPU_Wigner4D:
 
 		self.average_x   = np.array(average_x  )
 		self.average_p_x = np.array(average_p_x)
+		self.average_y   = np.array(average_y  )
+		self.average_p_y = np.array(average_p_y)
 
 		self.file['/Ehrenfest/average_x']    = self.average_x
 		self.file['/Ehrenfest/average_p_x']  = self.average_p_x
+		self.file['/Ehrenfest/average_y']    = self.average_y
+		self.file['/Ehrenfest/average_p_y']  = self.average_p_y
 
 			
 		
