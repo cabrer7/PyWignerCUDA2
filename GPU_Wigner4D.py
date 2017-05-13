@@ -277,6 +277,8 @@ class GPU_Wigner4D:
 		y_Define    = "\n#define y(i)   dy  *( (i/(gridDIM_x*gridDIM_x)) % gridDIM_y  - 0.5*gridDIM_y)\n"
 		p_y_Define  = "\n#define p_y(i) dp_y*(  i/(gridDIM_x*gridDIM_x*gridDIM_y) - 0.5*gridDIM_y )\n"
 
+		p_x_p_y_Define = p_x_Define + p_y_Define
+		phaseSpaceDefine =  p_x_Define + p_y_Define + x_Define + y_Define
 
 		self.Average_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
@@ -302,11 +304,21 @@ class GPU_Wigner4D:
         			arguments= "pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES"+p_y_Define+self.CUDA_constants)
 
+		#
+		kineticString = self.kineticString.replace( 'p_x' , 'p_x(i)'  )
+		kineticString =      kineticString.replace( 'p_y' , 'p_y(i)'  )
+		potentialString = (self.potentialString.replace( 'x'   , 'x(i)'    )).replace( 'y'   , 'y(i)'    )
+ 		energyString = kineticString + "+" + potentialString
+
+
+		print "\n"
+		print energyString
+
 		self.Energy_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
-				map_expr = "pycuda::real<double>( dx*( (i%gridDIM_x) - gridDIM_x/2 )*dx*dy*dp_x*dp_y*W[i])",
+				map_expr = "pycuda::real<double>(("+energyString+")*dx*dy*dp_x*dp_y*W[i])",
         			arguments= "pycuda::complex<double> *W",
-				preamble = "#define _USE_MATH_DEFINES"+ self.CUDA_constants)
+				preamble = "#define _USE_MATH_DEFINES"+phaseSpaceDefine+self.CUDA_constants)
 
 	def Gaussian_CPU(x,mu,sigma):
 		return np.exp( - (x-mu)**2/sigma**2/2.  )/(sigma*np.sqrt( 2*np.pi  ))
@@ -383,6 +395,7 @@ class GPU_Wigner4D:
 
 		average_y   = []
 		average_p_y = []
+		energy      = []
 
 		for tIndex in timeRangeIndex:
 
@@ -396,6 +409,7 @@ class GPU_Wigner4D:
 
 			average_y.append(   self.Average_y_GPU  (W_gpu).get()  )
 			average_p_y.append( self.Average_p_y_GPU(W_gpu).get()  )
+			energy.append(      self.Energy_GPU(W_gpu).get()       )
 
 			# p x  ->  p lambda
 			self.Fourier_X_To_Lambda_GPU( W_gpu )
@@ -420,7 +434,9 @@ class GPU_Wigner4D:
 		self.average_p_x = np.array(average_p_x)
 		self.average_y   = np.array(average_y  )
 		self.average_p_y = np.array(average_p_y)
+		self.energy      = np.array(energy)
 
+		self.file['/Ehrenfest/energy']       = self.energy
 		self.file['/Ehrenfest/average_x']    = self.average_x
 		self.file['/Ehrenfest/average_p_x']  = self.average_p_x
 		self.file['/Ehrenfest/average_y']    = self.average_y
