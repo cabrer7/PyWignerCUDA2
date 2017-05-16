@@ -286,11 +286,24 @@ class GPU_Wigner4D:
         			arguments= "pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES"+x_Define+self.CUDA_constants)
 
+		self.Average_x_square_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( x(i)*x(i)*dx*dy*dp_x*dp_y*W[i] )",
+        			arguments= "pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES"+x_Define+self.CUDA_constants)
+
 		self.Average_p_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
 				map_expr = "pycuda::real<double>( p_x(i)*dx*dy*dp_x*dp_y*W[i] )",
         			arguments="pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES" +p_x_Define+self.CUDA_constants)
+
+		self.Average_p_x_square_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( p_x(i)*p_x(i)*dx*dy*dp_x*dp_y*W[i] )",
+        			arguments="pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES" +p_x_Define+self.CUDA_constants)
+
 
 		self.Average_y_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
@@ -393,6 +406,9 @@ class GPU_Wigner4D:
 		average_x   = []
 		average_p_x = []
 
+		average_x_square   = []
+		average_p_x_square = []
+
 		average_y   = []
 		average_p_y = []
 		energy      = []
@@ -406,6 +422,9 @@ class GPU_Wigner4D:
 
 			average_x.append(   self.Average_x_GPU  (W_gpu).get()  )
 			average_p_x.append( self.Average_p_x_GPU(W_gpu).get()  )
+
+			average_x_square.append(   self.Average_x_square_GPU  (W_gpu).get()  )
+			average_p_x_square.append( self.Average_p_x_square_GPU(W_gpu).get()  )
 
 			average_y.append(   self.Average_y_GPU  (W_gpu).get()  )
 			average_p_y.append( self.Average_p_y_GPU(W_gpu).get()  )
@@ -434,6 +453,10 @@ class GPU_Wigner4D:
 		self.average_p_x = np.array(average_p_x)
 		self.average_y   = np.array(average_y  )
 		self.average_p_y = np.array(average_p_y)
+
+		self.average_x_square   = np.array(average_x_square  )
+		self.average_p_x_square = np.array(average_p_x_square)
+
 		self.energy      = np.array(energy)
 
 		self.file['/Ehrenfest/energy']       = self.energy
@@ -451,6 +474,7 @@ class GPU_Wigner4D:
 
 
 		
+
 
 
 
