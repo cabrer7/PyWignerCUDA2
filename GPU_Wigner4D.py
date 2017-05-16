@@ -183,10 +183,10 @@ class GPU_Wigner4D:
 			int i_y    = (i/(gridDIM_x*gridDIM_x)) % gridDIM_y;
 			int i_p_y  = i/(gridDIM_x*gridDIM_x*gridDIM_y);
 
-			double lambda_x   = dx  *( i_x   - gridDIM_x/2 );
-			double p_x        = dp_x*( i_p_x - gridDIM_x/2 );
-			double lambda_y   = dy  *( i_y   - gridDIM_y/2 );
-			double p_y        = dp_y*( i_p_y - gridDIM_y/2 );			
+			double lambda_x   = dlambda_x*( i_x   - gridDIM_x/2 );
+			double p_x        = dp_x     *( i_p_x - gridDIM_x/2 );
+			double lambda_y   = dlambda_y*( i_y   - gridDIM_y/2 );
+			double p_y        = dp_y     *( i_p_y - gridDIM_y/2 );			
 			"""
 		self.indexUnpack_x_theta_string = """
 			int i_x   = i%gridDIM_x;
