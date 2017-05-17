@@ -55,11 +55,6 @@ class GPU_Wigner4D:
 	def __init__( self ):
 
 
-		self.gridDIM_p_y = 64      #axis 0
-		self.gridDIM_y   = 64      #axis 1    
-		self.gridDIM_p_x = 128     #axis 2
-		self.gridDIM_x   = 128     #axis 3
-
 		size = self.gridDIM_y*self.gridDIM_p_y*self.gridDIM_x*self.gridDIM_p_x
 
 		self.FAFT_axes0 = 0
@@ -318,6 +313,19 @@ class GPU_Wigner4D:
 				preamble = "#define _USE_MATH_DEFINES"+p_y_Define+self.CUDA_constants)
 
 		#
+		self.Average_y_square_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( y(i)*y(i)*dx*dy*dp_x*dp_y*W[i] )",
+        			arguments= "pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES"+y_Define+self.CUDA_constants)
+
+		self.Average_p_y_square_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr = "pycuda::real<double>( p_y(i)*p_y(i)*dx*dy*dp_x*dp_y*W[i] )",
+        			arguments="pycuda::complex<double> *W",
+				preamble = "#define _USE_MATH_DEFINES" +p_y_Define+self.CUDA_constants)
+
+		#
 		kineticString = self.kineticString.replace( 'p_x' , 'p_x(i)'  )
 		kineticString =      kineticString.replace( 'p_y' , 'p_y(i)'  )
 		potentialString = (self.potentialString.replace( 'x'   , 'x(i)'    )).replace( 'y'   , 'y(i)'    )
@@ -358,29 +366,60 @@ class GPU_Wigner4D:
 		cuda_faft64(  int(W_gpu.gpudata), self.dy,   -self.delta_y,   self.FAFT_segment_axes2, self.FAFT_axes2, self.NF )
 		cuda_faft64(  int(W_gpu.gpudata), self.dp_y, -self.delta_p_y, self.FAFT_segment_axes3, self.FAFT_axes3, self.NF )
 
-	#
-	def Fourier_X_To_Lambda_GPU(self, W_gpu ):
+	#.................. 64  128 ..........................................
+
+	def Fourier_X_To_Lambda_64_128_GPU(self, W_gpu ):
 		cuda_faft128( int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
 		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
 		W_gpu /= W_gpu.size
 
-	def Fourier_Lambda_To_X_GPU(self, W_gpu ):
+	def Fourier_Lambda_To_X_64_128_GPU(self, W_gpu ):
 		cuda_faft128( int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
 		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
 		W_gpu /= W_gpu.size
 
-	def Fourier_P_To_Theta_GPU(self, W_gpu ):
+	def Fourier_P_To_Theta_64_128_GPU(self, W_gpu ):
 		cuda_faft128( int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
 		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
 		W_gpu /= W_gpu.size
 
-	def Fourier_Theta_To_P_GPU(self, W_gpu ):
+	def Fourier_Theta_To_P_64_128_GPU(self, W_gpu ):
 		cuda_faft128( int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
 		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
 		W_gpu /= W_gpu.size
 
+	#................ 64 64 .............................................
+
+	def Fourier_X_To_Lambda_64_64_GPU(self, W_gpu ):
+		#cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
+		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
+		W_gpu /= W_gpu.size
+
+	def Fourier_Lambda_To_X_64_64_GPU(self, W_gpu ):
+		cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
+		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
+		W_gpu /= W_gpu.size
+
+	def Fourier_P_To_Theta_64_64_GPU(self, W_gpu ):
+		cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
+		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
+		W_gpu /= W_gpu.size
+
+	def Fourier_Theta_To_P_64_64_GPU(self, W_gpu ):
+		cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
+		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
+		W_gpu /= W_gpu.size
+
+	#.....................................................................
 	
 	def Run(self):
+
+		if self.gridDIM_x==128 and self.gridDIM_y == 64:
+			Fourier_X_To_Lambda = self.Fourier_X_To_Lambda_64_128_GPU
+			Fourier_Lambda_To_X = self.Fourier_Lambda_To_X_64_128_GPU
+			Fourier_P_To_Theta  = self.Fourier_P_To_Theta_64_128_GPU
+			Fourier_Theta_To_P  = self.Fourier_Theta_To_P_64_128_GPU
+
 
 		try :
 			import os
@@ -408,6 +447,8 @@ class GPU_Wigner4D:
 
 		average_x_square   = []
 		average_p_x_square = []
+		average_y_square   = []
+		average_p_y_square = []
 
 		average_y   = []
 		average_p_y = []
@@ -428,22 +469,26 @@ class GPU_Wigner4D:
 
 			average_y.append(   self.Average_y_GPU  (W_gpu).get()  )
 			average_p_y.append( self.Average_p_y_GPU(W_gpu).get()  )
+
+			average_y_square.append(   self.Average_y_square_GPU  (W_gpu).get()  )
+			average_p_y_square.append( self.Average_p_y_square_GPU(W_gpu).get()  )
+
 			energy.append(      self.Energy_GPU(W_gpu).get()       )
 
 			# p x  ->  p lambda
-			self.Fourier_X_To_Lambda_GPU( W_gpu )
+			Fourier_X_To_Lambda( W_gpu )
 
 			self.exp_p_lambda_GPU( W_gpu )
 
 			# p lambda  ->  p x
-			self.Fourier_Lambda_To_X_GPU( W_gpu )
+			Fourier_Lambda_To_X( W_gpu )
 			#  p x  -> theta x
-			self.Fourier_P_To_Theta_GPU( W_gpu )
+			Fourier_P_To_Theta( W_gpu )
 
 			self.exp_x_theta_GPU( W_gpu )
 
 			# theta x  -> p x
-			self.Fourier_Theta_To_P_GPU( W_gpu )
+			Fourier_Theta_To_P( W_gpu )
 
 
 		norm   = self.Norm_GPU( W_gpu )
@@ -456,6 +501,8 @@ class GPU_Wigner4D:
 
 		self.average_x_square   = np.array(average_x_square  )
 		self.average_p_x_square = np.array(average_p_x_square)
+		self.average_y_square   = np.array(average_y_square  )
+		self.average_p_y_square = np.array(average_p_y_square)
 
 		self.energy      = np.array(energy)
 
@@ -465,21 +512,12 @@ class GPU_Wigner4D:
 		self.file['/Ehrenfest/average_y']    = self.average_y
 		self.file['/Ehrenfest/average_p_y']  = self.average_p_y
 
+		self.file['/Ehrenfest/average_x_square'  ]  = self.average_x_square
+		self.file['/Ehrenfest/average_p_x_square']  = self.average_p_x_square
+		self.file['/Ehrenfest/average_y_square'  ]  = self.average_y_square
+		self.file['/Ehrenfest/average_p_y_square']  = self.average_p_y_square
+
 			
-		
-
-		
-
-
-
-
-		
-
-
-
-
-
-
 
 
 
