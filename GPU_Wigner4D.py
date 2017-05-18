@@ -407,25 +407,24 @@ class GPU_Wigner4D:
 	#................FAFT 64 64 .............................................
 
 	def Fourier_X_To_Lambda_64_64_GPU(self, W_gpu ):
-		faft64( int(W_gpu.gpudata), self.dp_x, self.delta_p_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
-		faft64( int(W_gpu.gpudata), self.dp_y, self.delta_p_y, self.FAFT_segment_axes1, self.FAFT_axes2, self.NF )
+		faft64( int(W_gpu.gpudata), self.dx, self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
+		faft64( int(W_gpu.gpudata), self.dy, self.delta_y, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
 		W_gpu /= W_gpu.size
 
 	def Fourier_Lambda_To_X_64_64_GPU(self, W_gpu ):
-		faft64( int(W_gpu.gpudata), self.dp_x, -self.delta_p_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
-		faft64( int(W_gpu.gpudata), self.dp_y, -self.delta_p_y, self.FAFT_segment_axes1, self.FAFT_axes2, self.NF )
+		faft64( int(W_gpu.gpudata), self.dx, -self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
+		faft64( int(W_gpu.gpudata), self.dy, -self.delta_y, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
 		W_gpu /= W_gpu.size
 
 	def Fourier_P_To_Theta_64_64_GPU(self, W_gpu ):
 		faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
-		faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
 		W_gpu /= W_gpu.size
 
 	def Fourier_Theta_To_P_64_64_GPU(self, W_gpu ):
 		faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
-		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
 		W_gpu /= W_gpu.size
-		
 
 	#.....................................................................
 	
