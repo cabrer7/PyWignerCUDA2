@@ -45,6 +45,22 @@ _faft256_4D.FAFT256_4D_Z2Z.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.
 
 cuda_faft128 = _faft256_4D.FAFT256_4D_Z2Z
 
+# FAFT 64-points
+_faft64_4D = ctypes.cdll.LoadLibrary( DIR_BASE_FAFT+'FAFT64_4D_Z2Z.so' )
+_faft64_4D.FAFT64_4D_Z2Z.restype = int
+_faft64_4D.FAFT64_4D_Z2Z.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double, 
+                                       ctypes.c_int, ctypes.c_int, ctypes.c_double ]
+_faft64_4D.IFAFT64_4D_Z2Z.restype = int
+_faft64_4D.IFAFT64_4D_Z2Z.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_double, 
+                                       ctypes.c_int, ctypes.c_int, ctypes.c_double ]
+
+faft64  = _faft64_4D.FAFT64_4D_Z2Z
+ifaft64 = _faft64_4D.IFAFT64_4D_Z2Z
+
+#
+
+
+
 #..................................................................
 
 
@@ -366,7 +382,7 @@ class GPU_Wigner4D:
 		cuda_faft64(  int(W_gpu.gpudata), self.dy,   -self.delta_y,   self.FAFT_segment_axes2, self.FAFT_axes2, self.NF )
 		cuda_faft64(  int(W_gpu.gpudata), self.dp_y, -self.delta_p_y, self.FAFT_segment_axes3, self.FAFT_axes3, self.NF )
 
-	#.................. 64  128 ..........................................
+	#..................FAFT 64  128 ..........................................
 
 	def Fourier_X_To_Lambda_64_128_GPU(self, W_gpu ):
 		cuda_faft128( int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
@@ -388,27 +404,28 @@ class GPU_Wigner4D:
 		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
 		W_gpu /= W_gpu.size
 
-	#................ 64 64 .............................................
+	#................FAFT 64 64 .............................................
 
 	def Fourier_X_To_Lambda_64_64_GPU(self, W_gpu ):
-		#cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
-		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
+		faft64( int(W_gpu.gpudata), self.dp_x, self.delta_p_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
+		faft64( int(W_gpu.gpudata), self.dp_y, self.delta_p_y, self.FAFT_segment_axes1, self.FAFT_axes2, self.NF )
 		W_gpu /= W_gpu.size
 
 	def Fourier_Lambda_To_X_64_64_GPU(self, W_gpu ):
-		cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
-		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
+		faft64( int(W_gpu.gpudata), self.dp_x, -self.delta_p_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
+		faft64( int(W_gpu.gpudata), self.dp_y, -self.delta_p_y, self.FAFT_segment_axes1, self.FAFT_axes2, self.NF )
 		W_gpu /= W_gpu.size
 
 	def Fourier_P_To_Theta_64_64_GPU(self, W_gpu ):
-		cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
-		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
 		W_gpu /= W_gpu.size
 
 	def Fourier_Theta_To_P_64_64_GPU(self, W_gpu ):
-		cuda_faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
-		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
 		W_gpu /= W_gpu.size
+		
 
 	#.....................................................................
 	
@@ -419,6 +436,12 @@ class GPU_Wigner4D:
 			Fourier_Lambda_To_X = self.Fourier_Lambda_To_X_64_128_GPU
 			Fourier_P_To_Theta  = self.Fourier_P_To_Theta_64_128_GPU
 			Fourier_Theta_To_P  = self.Fourier_Theta_To_P_64_128_GPU
+
+		elif self.gridDIM_x==64 and self.gridDIM_y == 64:
+			Fourier_X_To_Lambda = self.Fourier_X_To_Lambda_64_64_GPU
+			Fourier_Lambda_To_X = self.Fourier_Lambda_To_X_64_64_GPU
+			Fourier_P_To_Theta  = self.Fourier_P_To_Theta_64_64_GPU
+			Fourier_Theta_To_P  = self.Fourier_Theta_To_P_64_64_GPU
 
 
 		try :
@@ -477,7 +500,7 @@ class GPU_Wigner4D:
 
 			# p x  ->  p lambda
 			Fourier_X_To_Lambda( W_gpu )
-
+			
 			self.exp_p_lambda_GPU( W_gpu )
 
 			# p lambda  ->  p x
