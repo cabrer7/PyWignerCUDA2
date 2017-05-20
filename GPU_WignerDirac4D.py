@@ -124,7 +124,8 @@ class GPU_WignerDirac4D:
 		self.x   =   self.x_range[ np.newaxis, np.newaxis, np.newaxis, : ]   #axis 3
 		
 		self.CUDA_constants =  '\n'
-
+		self.CUDA_constants += '__device__ double c      = %f;   '%self.c
+		self.CUDA_constants += '__device__ double HBar   = %f;   '%self.HBar
 		self.CUDA_constants += '__device__ double dt   = %f;   '%self.dt
 		self.CUDA_constants += '__device__ double mass = %f; \n'%self.mass
 
@@ -158,13 +159,28 @@ class GPU_WignerDirac4D:
 		print '         GPU memory Total               ', pycuda.driver.mem_get_info()[1]/float(2**30) , 'GB'
 		print '         GPU memory Free  (Before)      ', pycuda.driver.mem_get_info()[0]/float(2**30) , 'GB'
 
-		self.W_init_gpu = gpuarray.zeros(
+		self.W11_init_gpu = gpuarray.zeros(
 				( self.gridDIM_p_y, self.gridDIM_y, self.gridDIM_p_x, self.gridDIM_x ), dtype=np.complex128 )
+
+		
+		self.W12_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W13_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W14_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+
+		self.W22_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W23_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W24_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+
+		self.W33_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W34_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+
+		self.W44_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		
 		print '         GPU memory Free  (After)       ', pycuda.driver.mem_get_info()[0]/float(2**30) , 'GB'	
 
 		#............................................................................
 
-		self.indexUnpack_x_p_string = """
+		indexUnpack_x_p_string = """
 			int i_x   = i%gridDIM_x;
 			int i_p_x = (i/gridDIM_x) % gridDIM_x;
 			int i_y   = (i/(gridDIM_x*gridDIM_x)) % gridDIM_y;
@@ -176,7 +192,7 @@ class GPU_WignerDirac4D:
 			double p_y = dp_y*( i_p_y - gridDIM_y/2 );			
 			"""
 
-		self.indexUnpack_lambda_theta_string = """
+		indexUnpack_lambda_theta_string = """
 			int i_x   = i%gridDIM_x;
 			int i_p_x = (i/gridDIM_x) % gridDIM_x;
 			int i_y   = (i/(gridDIM_x*gridDIM_x)) % gridDIM_y;
@@ -188,7 +204,7 @@ class GPU_WignerDirac4D:
 			double theta_y   = dtheta_y  * ( i_p_y - gridDIM_y/2 );			
 			"""
 
-		self.indexUnpack_lambda_p_string = """
+		indexUnpack_lambda_p_string = """
 			int i_x    = i%gridDIM_x;
 			int i_p_x  = (i/gridDIM_x) % gridDIM_x;
 			int i_y    = (i/(gridDIM_x*gridDIM_x)) % gridDIM_y;
@@ -199,7 +215,7 @@ class GPU_WignerDirac4D:
 			double lambda_y   = dlambda_y*( i_y   - gridDIM_y/2 );
 			double p_y        = dp_y     *( i_p_y - gridDIM_y/2 );			
 			"""
-		self.indexUnpack_x_theta_string = """
+		indexUnpack_x_theta_string = """
 			int i_x   = i%gridDIM_x;
 			int i_p_x = (i/gridDIM_x) % gridDIM_x;
 			int i_y   = (i/(gridDIM_x*gridDIM_x)) % gridDIM_y;
@@ -218,7 +234,7 @@ class GPU_WignerDirac4D:
 				double    mu_p_y, double    mu_y, double    mu_p_x, double    mu_x , 
 				double sigma_p_y, double sigma_y, double sigma_p_x, double sigma_x """
 		    ,
-		    self.indexUnpack_x_p_string + """
+		    indexUnpack_x_p_string + """
 			double temp =   exp(-0.5*( x   - mu_x   )*( x   - mu_x   )/( sigma_x   * sigma_x   )  );
 			       temp *=  exp(-0.5*( y   - mu_y   )*( y   - mu_y   )/( sigma_y   * sigma_y   )  );
 			       temp *=	exp(-0.5*( p_x - mu_p_x )*( p_x - mu_p_x )/( sigma_p_x * sigma_p_x )  );
@@ -236,7 +252,7 @@ class GPU_WignerDirac4D:
                         double p_x_mu, double  p_y_mu,
 			double omega_x, double omega_y, double mass"""
 		   ,
-		   self.indexUnpack_x_p_string + """
+		   indexUnpack_x_p_string + """
 			double temp  = (mass*pow( omega_x*(x-x_mu) ,2) + pow(p_x-p_x_mu,2)/mass)/omega_x;   
 			       temp += (mass*pow( omega_y*(y-y_mu) ,2) + pow(p_y-p_y_mu,2)/mass)/omega_y;
 
@@ -244,24 +260,120 @@ class GPU_WignerDirac4D:
 					          """
 		   ,"Gaussian",  preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants )	
 
+		# ...................................................................................................
 		# Kinetic propagator ................................................................................
+		#....................................................................................................
 
-		kineticStringC = '__device__ double K(double p_x, double p_y){ \n return '+self.kineticString+';\n}'
+		kineticStringC = """ 
+		__device__ double Omega(double p_x, double p_y, double m){ return  c/HBar*sqrt(pow(m*c,2)+pow(p_x,2)+pow(p_y,2)); }"""
+  		
+		kineticStringC += """
+__device__ pycuda::complex<double> K11(double p_x, double p_y, double m, double dt){ 
+ return  pycuda::complex<double>(cos(dt*Omega(p_x,p_y,m)),-((pow(c,2)*m*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)));}
 
-		self.exp_p_lambda_GPU = ElementwiseKernel(
-			""" pycuda::complex<double> *B """
+__device__ pycuda::complex<double> K22(double p_x, double p_y, double m, double dt){ 
+ return  pycuda::complex<double>(cos(dt*Omega(p_x,p_y,m)),(pow(c,2)*m*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar));}
+
+__device__ pycuda::complex<double> K14(double p_x, double p_y, double m, double dt){ 
+ return  pycuda::complex<double>(-((c*p_y*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)),-((c*p_x*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)));}
+
+__device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double dt){ 
+ return  pycuda::complex<double>((c*p_y*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar),-((c*p_x*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)));} 
+"""
+
+		self.exp_p_lambda_plus_GPU = ElementwiseKernel(
+ """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
+                                  pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
+							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
+											      pycuda::complex<double> *W44"""
 			,
-			self.indexUnpack_lambda_p_string + """ 				
-			double  r  = exp( - dt*D_lambda_y * lambda_x*lambda_x );
-	 			r *= exp( - dt*D_lambda_y * lambda_y*lambda_y );
- 
-			double phase  = dt*K(p_x + 0.5*lambda_x, p_y + 0.5*lambda_y) - dt*K(p_x - 0.5*lambda_x, p_y - 0.5*lambda_y);
-			B[i] *= pycuda::complex<double>( r*cos(phase), -r*sin(phase) );
+			indexUnpack_lambda_p_string + """ 				
+ 			double p_x_plus  = p_x + 0.5*HBar*lambda_x;
+			double p_y_plus  = p_y + 0.5*HBar*lambda_y;
+			
+			pycuda::complex<double> k11 = K11(p_x_plus,p_y_plus,mass,dt);
+			pycuda::complex<double> k22 = K22(p_x_plus,p_y_plus,mass,dt);
+			pycuda::complex<double> k14 = K14(p_x_plus,p_y_plus,mass,dt);  
+			pycuda::complex<double> k23 = K23(p_x_plus,p_y_plus,mass,dt);
 
+			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
+
+			W11_=k14*pycuda::conj<double>(W14[i]) + k11*W11[i];
+			W12_=k14*pycuda::conj<double>(W24[i]) + k11*W12[i];
+			W13_=k14*pycuda::conj<double>(W34[i]) + k11*W13[i];
+			W14_=k11*W14[i] + k14*W44[i];
+			W22_=k23*pycuda::conj<double>(W23[i]) + k11*W22[i];
+			W23_=k11*W23[i] + k23*W33[i];
+			W24_=k11*W24[i] + k23*W34[i];
+			W33_=k14*W23[i] + k22*W33[i];
+			W34_=k14*W24[i] + k22*W34[i];
+			W44_=k23*W14[i] + k22*W44[i];
+
+			W11[i] = W11_;
+			W12[i] = W12_;
+			W13[i] = W13_;
+			W14[i] = W14_;
+
+			W22[i] = W22_;
+			W23[i] = W23_;
+			W24[i] = W24_;
+
+			W33[i] = W33_;
+			W34[i] = W34_;
+
+			W44[i] = W44_;	
 			"""
-  		       ,"exp_p_lambda_GPU", preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants +kineticStringC )  
-		
+  		       ,"exp_p_lambda_GPU",
+			preamble = "#define _USE_MATH_DEFINES\n" + self.CUDA_constants +kineticStringC ) 
+
+
+		self.exp_p_lambda_minus_GPU = ElementwiseKernel(
+ """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
+                                  pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
+							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
+											      pycuda::complex<double> *W44"""
+			,
+			indexUnpack_lambda_p_string + """ 				
+ 			double p_x_minus  = p_x - 0.5*HBar*lambda_x;
+			double p_y_minus  = p_y - 0.5*HBar*lambda_y;
+			
+			pycuda::complex<double> k11 = K11(p_x_minus,p_y_minus,mass,-dt);
+			pycuda::complex<double> k22 = K22(p_x_minus,p_y_minus,mass,-dt);
+			pycuda::complex<double> k14 = K14(p_x_minus,p_y_minus,mass,-dt);  
+			pycuda::complex<double> k23 = K23(p_x_minus,p_y_minus,mass,-dt);
+
+			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
+			
+			W11_=k11*W11[i] + k23*W14[i];
+			W12_=k11*W12[i] + k14*W13[i];
+			W13_=k23*W12[i] + k22*W13[i];
+			W14_=k14*W11[i] + k22*W14[i];
+			W22_=k11*W22[i] + k14*W23[i];
+			W23_=k23*W22[i] + k22*W23[i];
+			W24_=k14*pycuda::conj<double>(W12[i]) + k22*W24[i];
+			W33_=k23*pycuda::conj<double>(W23[i]) + k22*W33[i];
+			W34_=k14*pycuda::conj<double>(W13[i]) + k22*W34[i];
+			W44_=k14*pycuda::conj<double>(W14[i]) + k22*W44[i];
+
+			W11[i] = W11_;
+			W12[i] = W12_;
+			W13[i] = W13_;
+			W14[i] = W14_;
+
+			W22[i] = W22_;
+			W23[i] = W23_;
+			W24[i] = W24_;
+
+			W33[i] = W33_;
+			W34[i] = W34_;
+
+			W44[i] = W44_;	
+			"""
+  		       ,"exp_p_lambda_GPU", preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants +kineticStringC ) 
+
+		# ....................................................................................................
 		#  Potential propagator ..............................................................................
+		# ....................................................................................................
 
 		potentialStringC = '__device__ double V(double x, double y){ \n return '+self.potentialString+';\n}'
 				
@@ -269,7 +381,7 @@ class GPU_WignerDirac4D:
 		self.exp_x_theta_GPU = ElementwiseKernel(
 			""" pycuda::complex<double> *B """
 			,
-			self.indexUnpack_x_theta_string + """ 
+			indexUnpack_x_theta_string + """ 
 			double phase  = dt*V(x-0.5*theta_x , y-0.5*theta_y) - dt*V( x+0.5*theta_x , y+0.5*theta_y );
 			
 			double  r  = exp( - dt*D_theta_y * theta_x*theta_x - dt*D_theta_y * theta_y*theta_y );
@@ -280,7 +392,65 @@ class GPU_WignerDirac4D:
   		       ,"exp_x_theta_GPU",
 			preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants + potentialStringC ) 
 
+
+		#......................................................................................................
+		#
+		#               Initial states 
+		#
+		#......................................................................................................
+
+		gaussianPsi_ParticleUp = """\n
+		__device__ pycuda::complex<double> psi1( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
+		double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  )*(c + sqrt( c*c + u_x*u_x + u_y*u_y ));
+		double phase = mass*(x*u_x + y*u_y);
+		return pycuda::complex<double>( r*cos(phase) , r*sin(phase) );}\n
+
+		__device__ pycuda::complex<double> psi2( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
+		return pycuda::complex<double>( 0., 0. );}\n
+
+		__device__ pycuda::complex<double> psi3( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
+		return pycuda::complex<double>( 0., 0. );}\n
+
+		__device__ pycuda::complex<double> psi4( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
+		double phase = mass*(x*u_x + y*u_y);
+		double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  );
+		return pycuda::complex<double>( r*(cos(phase)*u_x - sin(phase)*u_y) , r*(sin(phase)*u_x + cos(phase)*u_y) );}
+		\n
+		 """
+
+		self.WignerDiracGaussian_ParticleUp_GPU = ElementwiseKernel("""
+pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
+                              pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
+							    pycuda::complex<double> *W33, pycuda::complex<double> *W34,
+								 		          pycuda::complex<double> *W44,
+		double u_x, double u_y, double x_mu, double y_mu, double x_sigma, double y_sigma"""
+		,
+		indexUnpack_x_theta_string + """
+		double x_minus = x - 0.5*HBar*theta_x - x_mu;
+		double y_minus = y - 0.5*HBar*theta_y - y_mu;
+		double x_plus  = x + 0.5*HBar*theta_x - x_mu;
+		double y_plus  = y + 0.5*HBar*theta_y - y_mu;
+ 
+		W11[i] =                        psi1(x_minus,y_minus, u_x,u_y, x_sigma,y_sigma )* 
+			 pycuda::conj<double>(  psi1(x_plus,y_plus,   u_x,u_y, x_sigma,y_sigma )    );
+
+		W14[i] =                        psi1(x_minus,y_minus, u_x,u_y, x_sigma,y_sigma )* 
+			 pycuda::conj<double>(  psi4(x_plus,y_plus,   u_x,u_y, x_sigma,y_sigma )    );	
+	 
+		W44[i] =                        psi4(x_minus,y_minus, u_x,u_y, x_sigma,y_sigma )* 
+			 pycuda::conj<double>(  psi4(x_plus,y_plus,   u_x,u_y, x_sigma,y_sigma )    );
+
+		 """,
+		"WignerDiracGaussian_ParticleUp",
+		preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants + gaussianPsi_ParticleUp )
+
+		#.....................................................................................................
+		#
+		# 					Reduction Kernels 
+		#
 		# Ehrenfest theorems .................................................................................
+
+		volume_Define = "\n#define dV  dx*dy*dp_x*dp_y \n "
 
 		x_Define    = "\n#define x(i)    dx*( (i%gridDIM_x) - 0.5*gridDIM_x )\n"
 		p_x_Define  = "\n#define p_x(i)  dp_x*( ((i/gridDIM_x) % gridDIM_x)-0.5*gridDIM_x)\n"
@@ -288,8 +458,8 @@ class GPU_WignerDirac4D:
 		y_Define    = "\n#define y(i)   dy  *( (i/(gridDIM_x*gridDIM_x)) % gridDIM_y  - 0.5*gridDIM_y)\n"
 		p_y_Define  = "\n#define p_y(i) dp_y*(  i/(gridDIM_x*gridDIM_x*gridDIM_y) - 0.5*gridDIM_y )\n"
 
-		p_x_p_y_Define = p_x_Define + p_y_Define
-		phaseSpaceDefine =  p_x_Define + p_y_Define + x_Define + y_Define
+		p_x_p_y_Define = p_x_Define + p_y_Define + volume_Define
+		phaseSpaceDefine =  p_x_Define + p_y_Define + x_Define + y_Define + volume_Define
 
 		self.Average_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
@@ -341,7 +511,27 @@ class GPU_WignerDirac4D:
         			arguments="pycuda::complex<double> *W",
 				preamble = "#define _USE_MATH_DEFINES" +p_y_Define+self.CUDA_constants)
 
-		#
+
+		argumentWString = """pycuda::complex<double> *W11, pycuda::complex<double> *W12,
+				     pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
+				     pycuda::complex<double> *W22, pycuda::complex<double> *W23,
+				     pycuda::complex<double> *W24, pycuda::complex<double> *W33,
+				     pycuda::complex<double> *W34, pycuda::complex<double> *W44"""
+
+		self.Average_Alpha_1_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr  = "2.*dV*pycuda::real<double>( W14[i] + W23[i] )",
+        			arguments = "pycuda::complex<double> *W14, pycuda::complex<double> *W23",
+				preamble  = "#define _USE_MATH_DEFINES" +volume_Define+self.CUDA_constants)
+
+		self.Average_Alpha_2_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr  = "2.*dV*pycuda::imag<double>( W23[i] - W14[i] )",
+        			arguments = "pycuda::complex<double> *W14, pycuda::complex<double> *W23",
+				preamble  = "#define _USE_MATH_DEFINES" +volume_Define+self.CUDA_constants)
+
+		# ........................................
+
 		kineticString = self.kineticString.replace( 'p_x' , 'p_x(i)'  )
 		kineticString =      kineticString.replace( 'p_y' , 'p_y(i)'  )
 		potentialString = (self.potentialString.replace( 'x'   , 'x(i)'    )).replace( 'y'   , 'y(i)'    )
@@ -367,6 +557,59 @@ class GPU_WignerDirac4D:
 	def Norm_GPU( self, W_gpu ):
 		norm = gpuarray.sum(W_gpu).get()
 		return norm *self.dx * self.dp_x * self.dy * self.dp_y 
+
+	def Norm_4x4_GPU( self, W11, W22, W33, W44 ):
+		norm  = gpuarray.sum(W11).get()
+		norm += gpuarray.sum(W22).get()
+		norm += gpuarray.sum(W33).get()
+		norm += gpuarray.sum(W44).get()
+		return norm *self.dx * self.dp_x * self.dy * self.dp_y 
+
+	def Normalize_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44):
+		norm = self.Norm_4x4_GPU( W11, W22, W33, W44 )
+		W11 /= norm 
+		W12 /= norm
+		W13 /= norm
+		W14 /= norm
+ 
+		W22 /= norm
+		W23 /= norm
+		W24 /= norm
+
+		W33 /= norm
+		W34 /= norm
+
+		W44 /= norm
+
+	def Average_x_4x4_GPU(self,W11,W22,W33,W44):
+		avx  = self.Average_x_GPU(W11).get()
+		avx += self.Average_x_GPU(W22).get() 
+		avx += self.Average_x_GPU(W33).get()
+		avx += self.Average_x_GPU(W44).get()
+		return avx
+
+	def Average_p_x_4x4_GPU(self,W11,W22,W33,W44):
+		avx  = self.Average_p_x_GPU(W11).get()
+		avx += self.Average_p_x_GPU(W22).get() 
+		avx += self.Average_p_x_GPU(W33).get()
+		avx += self.Average_p_x_GPU(W44).get()
+		return avx
+
+	def Average_y_4x4_GPU(self,W11,W22,W33,W44):
+		avx  = self.Average_y_GPU(W11).get()
+		avx += self.Average_y_GPU(W22).get() 
+		avx += self.Average_y_GPU(W33).get()
+		avx += self.Average_y_GPU(W44).get()
+		return avx
+
+	def Average_p_y_4x4_GPU(self,W11,W22,W33,W44):
+		avx  = self.Average_p_y_GPU(W11).get()
+		avx += self.Average_p_y_GPU(W22).get() 
+		avx += self.Average_p_y_GPU(W33).get()
+		avx += self.Average_p_y_GPU(W44).get()
+		return avx
+
+		
 
 	#
 	def FAFT_64_128(self, W_gpu):
@@ -426,8 +669,67 @@ class GPU_WignerDirac4D:
 		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
 		W_gpu /= W_gpu.size
 		
+	def Fourier_X_To_Lambda_64_64_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ):
+		self.Fourier_X_To_Lambda_64_64_GPU( W11 )
+		self.Fourier_X_To_Lambda_64_64_GPU( W12 )
+		self.Fourier_X_To_Lambda_64_64_GPU( W13 )
+		self.Fourier_X_To_Lambda_64_64_GPU( W14 )
 
-	#.....................................................................
+		self.Fourier_X_To_Lambda_64_64_GPU( W22 )
+		self.Fourier_X_To_Lambda_64_64_GPU( W23 )
+		self.Fourier_X_To_Lambda_64_64_GPU( W24 )
+
+		self.Fourier_X_To_Lambda_64_64_GPU( W33 )
+		self.Fourier_X_To_Lambda_64_64_GPU( W34 )
+
+		self.Fourier_X_To_Lambda_64_64_GPU( W44 )
+
+	def Fourier_Lambda_To_X_64_64_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ):
+		self.Fourier_Lambda_To_X_64_64_GPU( W11 )
+		self.Fourier_Lambda_To_X_64_64_GPU( W12 )
+		self.Fourier_Lambda_To_X_64_64_GPU( W13 )
+		self.Fourier_Lambda_To_X_64_64_GPU( W14 )
+
+		self.Fourier_Lambda_To_X_64_64_GPU( W22 )
+		self.Fourier_Lambda_To_X_64_64_GPU( W23 )
+		self.Fourier_Lambda_To_X_64_64_GPU( W24 )
+
+		self.Fourier_Lambda_To_X_64_64_GPU( W33 )
+		self.Fourier_Lambda_To_X_64_64_GPU( W34 )
+
+		self.Fourier_Lambda_To_X_64_64_GPU( W44 )
+
+	def Fourier_Theta_To_P_64_64_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ):
+		self.Fourier_Theta_To_P_64_64_GPU( W11 )
+		self.Fourier_Theta_To_P_64_64_GPU( W12 )
+		self.Fourier_Theta_To_P_64_64_GPU( W13 )
+		self.Fourier_Theta_To_P_64_64_GPU( W14 )
+
+		self.Fourier_Theta_To_P_64_64_GPU( W22 )
+		self.Fourier_Theta_To_P_64_64_GPU( W23 )
+		self.Fourier_Theta_To_P_64_64_GPU( W24 )
+
+		self.Fourier_Theta_To_P_64_64_GPU( W33 )
+		self.Fourier_Theta_To_P_64_64_GPU( W34 )
+
+		self.Fourier_Theta_To_P_64_64_GPU( W44 )	
+
+	def Fourier_P_To_Theta_64_64_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ):
+		self.Fourier_P_To_Theta_64_64_GPU( W11 )
+		self.Fourier_P_To_Theta_64_64_GPU( W12 )
+		self.Fourier_P_To_Theta_64_64_GPU( W13 )
+		self.Fourier_P_To_Theta_64_64_GPU( W14 )
+
+		self.Fourier_P_To_Theta_64_64_GPU( W22 )
+		self.Fourier_P_To_Theta_64_64_GPU( W23 )
+		self.Fourier_P_To_Theta_64_64_GPU( W24 )
+
+		self.Fourier_P_To_Theta_64_64_GPU( W33 )
+		self.Fourier_P_To_Theta_64_64_GPU( W34 )
+
+		self.Fourier_P_To_Theta_64_64_GPU( W44 )
+		
+	#.......................................................................
 	
 	def Run(self):
 
@@ -438,10 +740,10 @@ class GPU_WignerDirac4D:
 			Fourier_Theta_To_P  = self.Fourier_Theta_To_P_64_128_GPU
 
 		elif self.gridDIM_x==64 and self.gridDIM_y == 64:
-			Fourier_X_To_Lambda = self.Fourier_X_To_Lambda_64_64_GPU
-			Fourier_Lambda_To_X = self.Fourier_Lambda_To_X_64_64_GPU
-			Fourier_P_To_Theta  = self.Fourier_P_To_Theta_64_64_GPU
-			Fourier_Theta_To_P  = self.Fourier_Theta_To_P_64_64_GPU
+			Fourier_X_To_Lambda = self.Fourier_X_To_Lambda_64_64_4x4_GPU
+			Fourier_Lambda_To_X = self.Fourier_Lambda_To_X_64_64_4x4_GPU
+			Fourier_P_To_Theta  = self.Fourier_P_To_Theta_64_64_4x4_GPU
+			Fourier_Theta_To_P  = self.Fourier_Theta_To_P_64_64_4x4_GPU
 
 
 		try :
@@ -462,8 +764,19 @@ class GPU_WignerDirac4D:
 
 		timeRangeIndex = range(0, self.timeSteps+1)
 
-		W_gpu = self.W_init_gpu
+		W11 = self.W11_init_gpu
+		W12 = self.W12_init_gpu
+		W13 = self.W13_init_gpu
+		W14 = self.W14_init_gpu
 
+		W22 = self.W22_init_gpu
+		W23 = self.W23_init_gpu
+		W24 = self.W24_init_gpu
+
+		W33 = self.W33_init_gpu
+		W34 = self.W34_init_gpu
+	
+		W44 = self.W44_init_gpu
 
 		average_x   = []
 		average_p_x = []
@@ -475,47 +788,39 @@ class GPU_WignerDirac4D:
 
 		average_y   = []
 		average_p_y = []
+
+		average_Alpha_1 = []
+		average_Alpha_2 = []		
+
 		energy      = []
+
 
 		for tIndex in timeRangeIndex:
 
 			print ' t index = ', tIndex
 
-			norm   = self.Norm_GPU( W_gpu )
-      		        W_gpu /= norm
+			self.Normalize_4x4_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+            			    
+			average_x.append(   self.Average_x_4x4_GPU  (W11, W22, W33, W44)   )
+			average_p_x.append( self.Average_p_x_4x4_GPU(W11, W22, W33, W44)   )
+			
+			average_y.append(   self.Average_y_4x4_GPU  (W11, W22, W33, W44)   )
+			average_p_y.append( self.Average_p_y_4x4_GPU(W11, W22, W33, W44)   )
 
-			average_x.append(   self.Average_x_GPU  (W_gpu).get()  )
-			average_p_x.append( self.Average_p_x_GPU(W_gpu).get()  )
-
-			average_x_square.append(   self.Average_x_square_GPU  (W_gpu).get()  )
-			average_p_x_square.append( self.Average_p_x_square_GPU(W_gpu).get()  )
-
-			average_y.append(   self.Average_y_GPU  (W_gpu).get()  )
-			average_p_y.append( self.Average_p_y_GPU(W_gpu).get()  )
-
-			average_y_square.append(   self.Average_y_square_GPU  (W_gpu).get()  )
-			average_p_y_square.append( self.Average_p_y_square_GPU(W_gpu).get()  )
-
-			energy.append(      self.Energy_GPU(W_gpu).get()       )
+			average_Alpha_1.append( self.Average_Alpha_1_GPU(W14,W23).get()  )	
+			average_Alpha_2.append( self.Average_Alpha_2_GPU(W14,W23).get()  )		
 
 			# p x  ->  p lambda
-			Fourier_X_To_Lambda( W_gpu )
+			Fourier_X_To_Lambda(W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+
 			
-			self.exp_p_lambda_GPU( W_gpu )
+			self.exp_p_lambda_plus_GPU (  W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+			self.exp_p_lambda_minus_GPU ( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 
 			# p lambda  ->  p x
-			Fourier_Lambda_To_X( W_gpu )
-			#  p x  -> theta x
-			Fourier_P_To_Theta( W_gpu )
+			Fourier_Lambda_To_X( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 
-			self.exp_x_theta_GPU( W_gpu )
-
-			# theta x  -> p x
-			Fourier_Theta_To_P( W_gpu )
-
-
-		norm   = self.Norm_GPU( W_gpu )
-      		W_gpu /= norm
+			
 
 		self.average_x   = np.array(average_x  )
 		self.average_p_x = np.array(average_p_x)
@@ -526,6 +831,9 @@ class GPU_WignerDirac4D:
 		self.average_p_x_square = np.array(average_p_x_square)
 		self.average_y_square   = np.array(average_y_square  )
 		self.average_p_y_square = np.array(average_p_y_square)
+
+		self.average_Alpha_1 = np.array(average_Alpha_1).flatten()
+		self.average_Alpha_2 = np.array(average_Alpha_2).flatten()
 
 		self.energy      = np.array(energy)
 
