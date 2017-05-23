@@ -291,10 +291,10 @@ __device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double 
  			double p_x_plus  = p_x + 0.5*HBar*lambda_x;
 			double p_y_plus  = p_y + 0.5*HBar*lambda_y;
 			
-			pycuda::complex<double> k11 = K11(p_x_plus,p_y_plus,mass,dt);
-			pycuda::complex<double> k22 = K22(p_x_plus,p_y_plus,mass,dt);
-			pycuda::complex<double> k14 = K14(p_x_plus,p_y_plus,mass,dt);  
-			pycuda::complex<double> k23 = K23(p_x_plus,p_y_plus,mass,dt);
+			pycuda::complex<double> k11 = K11(p_x_plus,p_y_plus, 0.5*mass,dt);
+			pycuda::complex<double> k22 = K22(p_x_plus,p_y_plus, 0.5*mass,dt);
+			pycuda::complex<double> k14 = K14(p_x_plus,p_y_plus, 0.5*mass,dt);  
+			pycuda::complex<double> k23 = K23(p_x_plus,p_y_plus, 0.5*mass,dt);
 
 			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
 
@@ -337,10 +337,10 @@ __device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double 
  			double p_x_minus  = p_x - 0.5*HBar*lambda_x;
 			double p_y_minus  = p_y - 0.5*HBar*lambda_y;
 			
-			pycuda::complex<double> k11 = K11(p_x_minus,p_y_minus,mass,-dt);
-			pycuda::complex<double> k22 = K22(p_x_minus,p_y_minus,mass,-dt);
-			pycuda::complex<double> k14 = K14(p_x_minus,p_y_minus,mass,-dt);  
-			pycuda::complex<double> k23 = K23(p_x_minus,p_y_minus,mass,-dt);
+			pycuda::complex<double> k11 = K11(p_x_minus,p_y_minus, 0.5*mass,-dt);
+			pycuda::complex<double> k22 = K22(p_x_minus,p_y_minus, 0.5*mass,-dt);
+			pycuda::complex<double> k14 = K14(p_x_minus,p_y_minus, 0.5*mass,-dt);  
+			pycuda::complex<double> k23 = K23(p_x_minus,p_y_minus, 0.5*mass,-dt);
 
 			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
 			
@@ -372,24 +372,125 @@ __device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double 
   		       ,"exp_p_lambda_GPU", preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants +kineticStringC ) 
 
 		# ....................................................................................................
+		#
 		#  Potential propagator ..............................................................................
+		#
 		# ....................................................................................................
 
-		potentialStringC = '__device__ double V(double x, double y){ \n return '+self.potentialString+';\n}'
-				
+		potentialString012C ='__device__ double A0(double t,double x, double y){return '+self.potential_0_String+';\n}'
+		potentialString012C+='__device__ double A1(double t,double x, double y){return '+self.potential_1_String+';\n}'	
+		potentialString012C+='__device__ double A2(double t,double x, double y){return '+self.potential_0_String+';\n}'	
 
-		self.exp_x_theta_GPU = ElementwiseKernel(
-			""" pycuda::complex<double> *B """
+		potentialStringC = potentialString012C + """
+		__device__ double F(double t, double x, double y, double m) {
+ 			return sqrt(pow(A1(t,x,y),2) + pow(A2(t,x,y),2) + pow(c,2)*pow(m,2));}
+
+		__device__ pycuda::complex<double> V11 (double t, double x, double y, double m, double dt){
+ 	return  pycuda::complex<double>(cos((c*dt*F(t,x,y,m))/HBar),-((c*m*sin((c*dt*F(t,x,y,m))/HBar))/F(t,x,y,m)));}
+
+		__device__ pycuda::complex<double> V14 (double t, double x, double y, double m, double dt){
+ return  pycuda::complex<double>(-((A2(t,x,y)*sin((c*dt*F(t,x,y,m))/HBar))/F(t,x,y,m)),-((A1(t,x,y)*sin((c*dt*F(t,x,y,m))/HBar))/F(t,x,y,m)));}
+		"""
+
+
+		self.exp_x_theta_minus_GPU = ElementwiseKernel(
+ """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
+                                  pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
+							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
+											      pycuda::complex<double> *W44,
+ double t"""
 			,
 			indexUnpack_x_theta_string + """ 
-			double phase  = dt*V(x-0.5*theta_x , y-0.5*theta_y) - dt*V( x+0.5*theta_x , y+0.5*theta_y );
-			
 			double  r  = exp( - dt*D_theta_y * theta_x*theta_x - dt*D_theta_y * theta_y*theta_y );
 
-			B[i] *= pycuda::complex<double>( r*cos(phase), -r*sin(phase) );
+			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
+
+			double x_minus = x - 0.5*HBar*theta_x;
+			double y_minus = y - 0.5*HBar*theta_y;
+
+			pycuda::complex<double> v11 = V11(t,x_minus,y_minus, 0.5*mass,dt);
+			pycuda::complex<double> v14 = V14(t,x_minus,y_minus, 0.5*mass,dt);
+
+			W11_=v14*pycuda::conj<double>(W14[i]) + v11*W11[i];
+			W12_=v14*pycuda::conj<double>(W24[i]) + v11*W12[i];
+			W13_=v14*pycuda::conj<double>(W34[i]) + v11*W13[i];
+			W14_=v11*W14[i] + v14*W44[i];
+			W22_=-(pycuda::conj<double>(v14)*pycuda::conj<double>(W23[i])) + v11*W22[i];
+			W23_=v11*W23[i] - pycuda::conj<double>(v14)*W33[i];
+			W24_=v11*W24[i] - pycuda::conj<double>(v14)*W34[i];
+			W33_=v14*W23[i] + pycuda::conj<double>(v11)*W33[i];
+			W34_=v14*W24[i] + pycuda::conj<double>(v11)*W34[i];
+			W44_=-(pycuda::conj<double>(v14)*W14[i]) + pycuda::conj<double>(v11)*W44[i];
+
+			pycuda::complex<double> expA0 = r;
+
+			W11[i] = expA0*W11_;
+			W12[i] = expA0*W12_;
+			W13[i] = expA0*W13_;
+			W14[i] = expA0*W14_;
+
+			W22[i] = expA0*W22_;
+			W23[i] = expA0*W23_;
+			W24[i] = expA0*W24_;
+
+			W33[i] = expA0*W33_;
+			W34[i] = expA0*W34_;
+
+			W44[i] = expA0*W44_;	
 
 			"""
-  		       ,"exp_x_theta_GPU",
+  		       ,"exp_x_theta_minus_GPU",
+			preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants + potentialStringC ) 
+
+		self.exp_x_theta_plus_GPU = ElementwiseKernel(
+ """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
+                                  pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
+							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
+											      pycuda::complex<double> *W44,
+ double t"""
+			,
+			indexUnpack_x_theta_string + """ 
+			double  r  = exp( - dt*D_theta_y * theta_x*theta_x - dt*D_theta_y * theta_y*theta_y );
+
+			pycuda::complex<double> v11, v14;
+			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
+
+			double x_plus = x + 0.5*HBar*theta_x;
+			double y_plus = y + 0.5*HBar*theta_y;
+
+			v11 = V11(t,x_plus , y_plus, 0.5*mass,-dt);
+			v14 = V14(t,x_plus , y_plus, 0.5*mass,-dt);
+
+
+			W11_=v11*W11[i] - pycuda::conj<double>(v14)*W14[i];
+			W12_=v11*W12[i] + v14*W13[i];
+			W13_=-(pycuda::conj<double>(v14)*W12[i]) + pycuda::conj<double>(v11)*W13[i];
+			W14_=v14*W11[i] + pycuda::conj<double>(v11)*W14[i];
+			W22_=v11*W22[i] + v14*W23[i];
+			W23_=-(pycuda::conj<double>(v14)*W22[i]) + pycuda::conj<double>(v11)*W23[i];
+			W24_=v14*pycuda::conj<double>(W12[i]) + pycuda::conj<double>(v11)*W24[i];
+			W33_=-(pycuda::conj<double>(v14)*pycuda::conj<double>(W23[i])) + pycuda::conj<double>(v11)*W33[i];
+			W34_=v14*pycuda::conj<double>(W13[i]) + pycuda::conj<double>(v11)*W34[i];
+			W44_=v14*pycuda::conj<double>(W14[i]) + pycuda::conj<double>(v11)*W44[i];
+
+			pycuda::complex<double> expA0 = r;
+
+			W11[i] = expA0*W11_;
+			W12[i] = expA0*W12_;
+			W13[i] = expA0*W13_;
+			W14[i] = expA0*W14_;
+
+			W22[i] = expA0*W22_;
+			W23[i] = expA0*W23_;
+			W24[i] = expA0*W24_;
+
+			W33[i] = expA0*W33_;
+			W34[i] = expA0*W34_;
+
+			W44[i] = expA0*W44_;	
+
+			"""
+  		       ,"exp_x_theta_plus_GPU",
 			preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants + potentialStringC ) 
 
 
@@ -400,23 +501,23 @@ __device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double 
 		#......................................................................................................
 
 		gaussianPsi_ParticleUp = """\n
-		__device__ pycuda::complex<double> psi1( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
-		double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  )*(c + sqrt( c*c + u_x*u_x + u_y*u_y ));
-		double phase = mass*(x*u_x + y*u_y);
-		return pycuda::complex<double>( r*cos(phase) , r*sin(phase) );}\n
 
-		__device__ pycuda::complex<double> psi2( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
-		return pycuda::complex<double>( 0., 0. );}\n
+	__device__ double u0(double u_x,double u_y){ return sqrt( c*c + pow(u_x,2) + pow(u_y,2)  ); }
 
-		__device__ pycuda::complex<double> psi3( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
-		return pycuda::complex<double>( 0., 0. );}\n
+	__device__ pycuda::complex<double> psi1( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma)
+	{
+	double u0_ = u0(u_x,u_y);
+	double phase = mass*(x*u_x + y*u_y);
+	double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  ) * (c + u0_);
+	return pycuda::complex<double>( r*cos(phase) , r*sin(phase) );}\n
 
-		__device__ pycuda::complex<double> psi4( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
-		double phase = mass*(x*u_x + y*u_y);
-		double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  );
-		return pycuda::complex<double>( r*(cos(phase)*u_x - sin(phase)*u_y) , r*(sin(phase)*u_x + cos(phase)*u_y) );}
-		\n
-		 """
+
+	__device__ pycuda::complex<double> psi4( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
+	double phase = mass*(x*u_x + y*u_y);
+	double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  );
+	return pycuda::complex<double>( r*cos(phase)*u_x - r*sin(phase)*u_y , r*sin(phase)*u_x + r*cos(phase)*u_y ) ;}
+	\n
+	 """
 
 		self.WignerDiracGaussian_ParticleUp_GPU = ElementwiseKernel("""
 pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
@@ -459,6 +560,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		p_y_Define  = "\n#define p_y(i) dp_y*(  i/(gridDIM_x*gridDIM_x*gridDIM_y) - 0.5*gridDIM_y )\n"
 
 		p_x_p_y_Define = p_x_Define + p_y_Define + volume_Define
+		x_y_Define = x_Define + y_Define
 		phaseSpaceDefine =  p_x_Define + p_y_Define + x_Define + y_Define + volume_Define
 
 		self.Average_x_GPU = reduction.ReductionKernel( np.float64, neutral="0",
@@ -531,21 +633,47 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 				preamble  = "#define _USE_MATH_DEFINES" +volume_Define+self.CUDA_constants)
 
 		# ........................................
+		# 		Energy
+		#.........................................
 
-		kineticString = self.kineticString.replace( 'p_x' , 'p_x(i)'  )
-		kineticString =      kineticString.replace( 'p_y' , 'p_y(i)'  )
-		potentialString = (self.potentialString.replace( 'x'   , 'x(i)'    )).replace( 'y'   , 'y(i)'    )
- 		energyString = kineticString + "+" + potentialString
+		energyKineticString =  "2.*c*dV*pycuda::real<double>( pycuda::complex<double>(p_x(i), p_y(i))*W14[i] ) + "
+		energyKineticString += "2.*c*dV*pycuda::real<double>( pycuda::complex<double>(p_x(i),-p_y(i))*W23[i] )  "
+		energyKineticString += " + dV*mass*c*c*pycuda::real<double>(W11[i]+W22[i]-W33[i]-W44[i]) "
 
+		energyFunctionArguments = """pycuda::complex<double> *W11, pycuda::complex<double> *W22,
+					    pycuda::complex<double> *W33, pycuda::complex<double> *W44, 
+					    pycuda::complex<double> *W14, pycuda::complex<double> *W23"""
 
-		print "\n"
-		print energyString
-
-		self.Energy_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+		self.Average_EnergyKinetic_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
-				map_expr = "pycuda::real<double>(("+energyString+")*dx*dy*dp_x*dp_y*W[i])",
-        			arguments= "pycuda::complex<double> *W",
-				preamble = "#define _USE_MATH_DEFINES"+phaseSpaceDefine+self.CUDA_constants)
+				map_expr  = energyKineticString,
+        			arguments = energyFunctionArguments,
+				preamble  = "#define _USE_MATH_DEFINES"+p_x_p_y_Define+volume_Define+self.CUDA_constants)
+
+		#.......................................
+
+		potential012_Define  = "\n#define A0  ("+self.potential_0_String+") \n "
+		potential012_Define += "\n#define A1  ("+self.potential_1_String+") \n "
+		potential012_Define += "\n#define A2  ("+self.potential_2_String+") \n "
+		potential012_Define = potential012_Define.replace("x","x(i)").replace("y","y(i)")
+
+
+		energyPotentialString  = "  dV*2.*A1*c*pycuda::real<double>(W14[i]+W23[i])"
+		energyPotentialString += "- dV*2.*A2*c*pycuda::imag<double>(W14[i]-W23[i])"
+		energyPotentialString += "+ dV*mass*c*c*pycuda::real<double>(W11[i] + W22[i] + W33[i] + W44[i])"
+
+		potentialDefines = x_y_Define + volume_Define + self.CUDA_constants + potential012_Define
+
+
+		self.Average_EnergyPotential_GPU = reduction.ReductionKernel( np.float64, neutral="0",
+        			reduce_expr="a+b", 
+				map_expr  = energyPotentialString,
+        			arguments = energyFunctionArguments,
+				preamble  = "#define _USE_MATH_DEFINES\n"+potentialDefines)
+
+
+	#-----------------------------------------------------------------------------------------------------
+	#-----------------------------------------------------------------------------------------------------	
 
 	def Gaussian_CPU(x,mu,sigma):
 		return np.exp( - (x-mu)**2/sigma**2/2.  )/(sigma*np.sqrt( 2*np.pi  ))
@@ -566,7 +694,9 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		return norm *self.dx * self.dp_x * self.dy * self.dp_y 
 
 	def Normalize_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44):
-		norm = self.Norm_4x4_GPU( W11, W22, W33, W44 )
+		norm = self.Norm_4x4_GPU( W11, W22, W33, W44 ).real
+
+		#print ' Norm = ', norm
 		W11 /= norm 
 		W12 /= norm
 		W13 /= norm
@@ -657,7 +787,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 	def Fourier_Lambda_To_X_64_64_GPU(self, W_gpu ):
 		faft64( int(W_gpu.gpudata), self.dx, -self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
 		faft64( int(W_gpu.gpudata), self.dy, -self.delta_y, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
-		W_gpu /= W_gpu.size
+		W_gpu /= np.sqrt(W_gpu.size)/100.
 
 	def Fourier_P_To_Theta_64_64_GPU(self, W_gpu ):
 		faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
@@ -667,7 +797,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 	def Fourier_Theta_To_P_64_64_GPU(self, W_gpu ):
 		faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
 		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
-		W_gpu /= W_gpu.size
+		W_gpu /= np.sqrt(W_gpu.size)/100.
 		
 	def Fourier_X_To_Lambda_64_64_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ):
 		self.Fourier_X_To_Lambda_64_64_GPU( W11 )
@@ -792,7 +922,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		average_Alpha_1 = []
 		average_Alpha_2 = []		
 
-		energy      = []
+		energyKinetic      = []
 
 
 		for tIndex in timeRangeIndex:
@@ -808,7 +938,9 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 			average_p_y.append( self.Average_p_y_4x4_GPU(W11, W22, W33, W44)   )
 
 			average_Alpha_1.append( self.Average_Alpha_1_GPU(W14,W23).get()  )	
-			average_Alpha_2.append( self.Average_Alpha_2_GPU(W14,W23).get()  )		
+			average_Alpha_2.append( self.Average_Alpha_2_GPU(W14,W23).get()  )
+
+			energyKinetic.append( self.Average_EnergyKinetic_GPU(W11, W22, W33, W44, W14,W23).get()  )		
 
 			# p x  ->  p lambda
 			Fourier_X_To_Lambda(W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
@@ -817,10 +949,19 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 			self.exp_p_lambda_plus_GPU (  W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 			self.exp_p_lambda_minus_GPU ( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 
-			# p lambda  ->  p x
+			# p lambda  ->  theta x
 			Fourier_Lambda_To_X( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+			Fourier_P_To_Theta( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+			
+			t = np.float64(tIndex*self.dt)
+			self.exp_x_theta_minus_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ,t) 
+			self.exp_x_theta_plus_GPU(  W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ,t) 
+
+			# theta x -> p x
+			Fourier_Theta_To_P( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 
 			
+		self.Normalize_4x4_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 
 		self.average_x   = np.array(average_x  )
 		self.average_p_x = np.array(average_p_x)
@@ -835,9 +976,9 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		self.average_Alpha_1 = np.array(average_Alpha_1).flatten()
 		self.average_Alpha_2 = np.array(average_Alpha_2).flatten()
 
-		self.energy      = np.array(energy)
+		self.energyKinetic      = np.array(energyKinetic)
 
-		self.file['/Ehrenfest/energy']       = self.energy
+		self.file['/Ehrenfest/energyKinetic']       = self.energyKinetic
 		self.file['/Ehrenfest/average_x']    = self.average_x
 		self.file['/Ehrenfest/average_p_x']  = self.average_p_x
 		self.file['/Ehrenfest/average_y']    = self.average_y
