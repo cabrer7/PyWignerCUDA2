@@ -112,10 +112,10 @@ class GPU_WignerDirac4D:
 		self.x_range   = np.linspace( -self.x_amplitude,   self.x_amplitude  -self.dx,    self.gridDIM_x  )    #axis 3
 
 		# Ambiguity space range
-		self.theta_y_range = np.linspace(-self.theta_y_amplitude,self.theta_y_amplitude-self.dtheta_y,self.gridDIM_y  )    #0
-		self.lambda_y_range= np.linspace(-self.lambda_y_amplitude,self.lambda_y_amplitude-self.dlambda_y, self.gridDIM_p_y)#1
-		self.theta_x_range = np.linspace(-self.theta_x_amplitude,self.theta_x_amplitude -self.dtheta_x,  self.gridDIM_x  ) #2
-		self.lambda_x_range= np.linspace(-self.lambda_x_amplitude,self.lambda_x_amplitude-self.dlambda_x,self.gridDIM_p_x) #3
+		self.theta_y_range = np.linspace(-self.theta_y_amplitude, self.theta_y_amplitude -self.dtheta_y, self.gridDIM_y  )#0
+		self.lambda_y_range= np.linspace(-self.lambda_y_amplitude,self.lambda_y_amplitude-self.dlambda_y,self.gridDIM_p_y)#1
+		self.theta_x_range = np.linspace(-self.theta_x_amplitude, self.theta_x_amplitude -self.dtheta_x, self.gridDIM_x  )#2
+		self.lambda_x_range= np.linspace(-self.lambda_x_amplitude,self.lambda_x_amplitude-self.dlambda_x,self.gridDIM_p_x)#3
 
 		# Grid 
 		self.y   =   self.y_range[ np.newaxis, :, np.newaxis, np.newaxis ]   #axis 1
@@ -911,7 +911,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		cuda_faft64(  int(W_gpu.gpudata), self.dy,   -self.delta_y,   self.FAFT_segment_axes2, self.FAFT_axes2, self.NF )
 		cuda_faft64(  int(W_gpu.gpudata), self.dp_y, -self.delta_p_y, self.FAFT_segment_axes3, self.FAFT_axes3, self.NF )
 
-	#..................FAFT 64  128 ..........................................
+	#..................FAFT 64  128 ..........................................watch out the axes
 
 	def Fourier_X_To_Lambda_64_128_GPU(self, W_gpu ):
 		cuda_faft128( int(W_gpu.gpudata),  self.dx, self.delta_x,  self.FAFT_segment_axes1, self.FAFT_axes1, self.NF  )
@@ -936,23 +936,23 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 	#................FAFT 64 64 .............................................
 
 	def Fourier_X_To_Lambda_64_64_GPU(self, W_gpu ):
-		faft64( int(W_gpu.gpudata), self.dx, self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
-		faft64( int(W_gpu.gpudata), self.dy, self.delta_y, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
+		faft64( int(W_gpu.gpudata), self.dx, self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
+		faft64( int(W_gpu.gpudata), self.dy, self.delta_y, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
 		W_gpu /= W_gpu.size
 
 	def Fourier_Lambda_To_X_64_64_GPU(self, W_gpu ):
-		faft64( int(W_gpu.gpudata), self.dx, -self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
-		faft64( int(W_gpu.gpudata), self.dy, -self.delta_y, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
+		faft64( int(W_gpu.gpudata), self.dx, -self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
+		faft64( int(W_gpu.gpudata), self.dy, -self.delta_y, self.FAFT_segment_axes1, self.FAFT_axes1, self.NF )
 		W_gpu /= np.sqrt(W_gpu.size)/100.
 
 	def Fourier_P_To_Theta_64_64_GPU(self, W_gpu ):
-		faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
-		faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes2, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes0, self.NF  )
 		W_gpu /= W_gpu.size
 
 	def Fourier_Theta_To_P_64_64_GPU(self, W_gpu ):
-		faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
-		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes2, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes2, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes0, self.NF  )
 		W_gpu /= np.sqrt(W_gpu.size)/100.
 		
 	def Fourier_X_To_Lambda_64_64_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ):
