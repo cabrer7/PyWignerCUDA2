@@ -159,22 +159,22 @@ class GPU_WignerDirac4D:
 		print '         GPU memory Total               ', pycuda.driver.mem_get_info()[1]/float(2**30) , 'GB'
 		print '         GPU memory Free  (Before)      ', pycuda.driver.mem_get_info()[0]/float(2**30) , 'GB'
 
-		self.W11_init_gpu = gpuarray.zeros(
+		self.W11  = gpuarray.zeros(
 				( self.gridDIM_p_y, self.gridDIM_y, self.gridDIM_p_x, self.gridDIM_x ), dtype=np.complex128 )
 
 		
-		self.W12_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
-		self.W13_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
-		self.W14_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W12  = gpuarray.zeros_like(self.W11 )
+		self.W13  = gpuarray.zeros_like(self.W11 )
+		self.W14  = gpuarray.zeros_like(self.W11 )
 
-		self.W22_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
-		self.W23_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
-		self.W24_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W22  = gpuarray.zeros_like(self.W11 )
+		self.W23  = gpuarray.zeros_like(self.W11 )
+		self.W24  = gpuarray.zeros_like(self.W11 )
 
-		self.W33_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
-		self.W34_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W33  = gpuarray.zeros_like(self.W11 )
+		self.W34  = gpuarray.zeros_like(self.W11 )
 
-		self.W44_init_gpu = gpuarray.zeros_like(self.W11_init_gpu)
+		self.W44  = gpuarray.zeros_like(self.W11 )
 		
 		print '         GPU memory Free  (After)       ', pycuda.driver.mem_get_info()[0]/float(2**30) , 'GB'	
 
@@ -1052,19 +1052,19 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 
 		timeRangeIndex = range(0, self.timeSteps+1)
 
-		W11 = self.W11_init_gpu
-		W12 = self.W12_init_gpu
-		W13 = self.W13_init_gpu
-		W14 = self.W14_init_gpu
+		W11 = self.W11 
+		W12 = self.W12 
+		W13 = self.W13 
+		W14 = self.W14 
 
-		W22 = self.W22_init_gpu
-		W23 = self.W23_init_gpu
-		W24 = self.W24_init_gpu
+		W22 = self.W22 
+		W23 = self.W23 
+		W24 = self.W24 
 
-		W33 = self.W33_init_gpu
-		W34 = self.W34_init_gpu
+		W33 = self.W33 
+		W34 = self.W34 
 	
-		W44 = self.W44_init_gpu
+		W44 = self.W44 
 
 		average_x   = []
 		average_p_x = []
@@ -1176,6 +1176,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		self.file['/Ehrenfest/average_p_y_square']  = self.average_p_y_square
 
 			
+
 
 
 
