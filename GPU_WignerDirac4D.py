@@ -276,112 +276,63 @@ class GPU_WignerDirac4D:
 		__device__ double Omega(double p_x, double p_y, double m){ return  c/HBar*sqrt(pow(m*c,2)+pow(p_x,2)+pow(p_y,2)); }"""
   		
 		kineticStringC += """
-__device__ pycuda::complex<double> K11(double p_x, double p_y, double m, double dt){ 
- return  pycuda::complex<double>(cos(dt*Omega(p_x,p_y,m)),-((pow(c,2)*m*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)));}
+		__device__ pycuda::complex<double> K11(double p1,double p2,double m,double dt){ 
+			return pycuda::complex<double>(cos(dt*Omega(p1,p2,m)),-((pow(c,2)*m*sin(dt*Omega(p1,p2,m)))/(Omega(p1,p2,m)*HBar)));}
 
-__device__ pycuda::complex<double> K22(double p_x, double p_y, double m, double dt){ 
- return  pycuda::complex<double>(cos(dt*Omega(p_x,p_y,m)),(pow(c,2)*m*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar));}
-
-__device__ pycuda::complex<double> K14(double p_x, double p_y, double m, double dt){ 
- return  pycuda::complex<double>(-((c*p_y*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)),-((c*p_x*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)));}
-
-__device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double dt){ 
- return  pycuda::complex<double>((c*p_y*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar),-((c*p_x*sin(dt*Omega(p_x,p_y,m)))/(Omega(p_x,p_y,m)*HBar)));} 
+		__device__ pycuda::complex<double> K14(double p1,double p2,double m,double dt){ 
+ 			return pycuda::complex<double>(-((c*p2*sin(dt*Omega(p1,p2,m)))/(Omega(p1,p2,m)*HBar)),-((c*p1*sin(dt*Omega(p1,p2,m)))/(Omega(p1,p2,m)*HBar)));}
 """
 
-		self.exp_p_lambda_plus_GPU = ElementwiseKernel(
+		self.exp_p_lambda_GPU = ElementwiseKernel(
  """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
                                   pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
 							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
 											      pycuda::complex<double> *W44"""
 			,
 			indexUnpack_lambda_p_string + """ 				
- 			double p_x_plus  = p_x + 0.5*HBar*lambda_x;
-			double p_y_plus  = p_y + 0.5*HBar*lambda_y;
+ 			double p_x_plus   = p_x + 0.5*HBar*lambda_x;
+			double p_y_plus   = p_y + 0.5*HBar*lambda_y;
+			double p_x_minus  = p_x - 0.5*HBar*lambda_x;
+			double p_y_minus  = p_y - 0.5*HBar*lambda_y;
 
-			double  r  = exp( - 0.5*dt*D_lambda_x*pow(lambda_x,2) - 0.5*dt*D_lambda_y*pow(lambda_y,2) );
+			double  r  = exp( - dt*D_lambda_x*pow(lambda_x,2) - dt*D_lambda_y*pow(lambda_y,2) );
 			
-			pycuda::complex<double> k11 = K11(p_x_plus,p_y_plus, 0.5*mass,dt);
-			pycuda::complex<double> k22 = K22(p_x_plus,p_y_plus, 0.5*mass,dt);
-			pycuda::complex<double> k14 = K14(p_x_plus,p_y_plus, 0.5*mass,dt);  
-			pycuda::complex<double> k23 = K23(p_x_plus,p_y_plus, 0.5*mass,dt);
+			pycuda::complex<double> KL11 = K11(p_x_plus,p_y_plus, mass, dt);
+			pycuda::complex<double> KL14 = K14(p_x_plus,p_y_plus, mass, dt);  
+
+			pycuda::complex<double> KR11 = K11(p_x_minus,p_y_minus, mass,-dt);
+			pycuda::complex<double> KR14 = K14(p_x_minus,p_y_minus, mass,-dt);  
 
 			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
 
-			W11_=k14*pycuda::conj<double>(W14[i]) + k11*W11[i];
-			W12_=k14*pycuda::conj<double>(W24[i]) + k11*W12[i];
-			W13_=k14*pycuda::conj<double>(W34[i]) + k11*W13[i];
-			W14_=k11*W14[i] + k14*W44[i];
-			W22_=k23*pycuda::conj<double>(W23[i]) + k11*W22[i];
-			W23_=k11*W23[i] + k23*W33[i];
-			W24_=k11*W24[i] + k23*W34[i];
-			W33_=k14*W23[i] + k22*W33[i];
-			W34_=k14*W24[i] + k22*W34[i];
-			W44_=k23*W14[i] + k22*W44[i];
+			W11_ = KL14*KR11*pycuda::conj<double>(W14[i]) + KL11*KR11*W11[i] - KL11*pycuda::conj<double>(KR14)*W14[i] - KL14*pycuda::conj<double>(KR14)*W44[i];
+			W12_ = KL14*KR11*pycuda::conj<double>(W24[i]) + KL14*KR14*pycuda::conj<double>(W34[i]) + KL11*KR11*W12[i] + KL11*KR14*W13[i];
+			W13_ = -(KL14*pycuda::conj<double>(KR14)*pycuda::conj<double>(W24[i])) + KL14*pycuda::conj<double>(KR11)*pycuda::conj<double>(W34[i]) - KL11*pycuda::conj<double>(KR14)*W12[i] + KL11*pycuda::conj<double>(KR11)*W13[i];
+			W14_ = KL14*KR14*pycuda::conj<double>(W14[i]) + KL11*KR14*W11[i] + KL11*pycuda::conj<double>(KR11)*W14[i] + KL14*pycuda::conj<double>(KR11)*W44[i];
+			W22_ = -(KR11*pycuda::conj<double>(KL14)*pycuda::conj<double>(W23[i])) + KL11*KR11*W22[i] + KL11*KR14*W23[i] - KR14*pycuda::conj<double>(KL14)*W33[i];
+			W23_ = pycuda::conj<double>(KL14)*pycuda::conj<double>(KR14)*pycuda::conj<double>(W23[i]) - KL11*pycuda::conj<double>(KR14)*W22[i] + KL11*pycuda::conj<double>(KR11)*W23[i] - pycuda::conj<double>(KL14)*pycuda::conj<double>(KR11)*W33[i];
+			W24_ = KL11*KR14*pycuda::conj<double>(W12[i]) - KR14*pycuda::conj<double>(KL14)*pycuda::conj<double>(W13[i]) + KL11*pycuda::conj<double>(KR11)*W24[i] - pycuda::conj<double>(KL14)*pycuda::conj<double>(KR11)*W34[i];
+			W33_ = -(pycuda::conj<double>(KL11)*pycuda::conj<double>(KR14)*pycuda::conj<double>(W23[i])) - KL14*pycuda::conj<double>(KR14)*W22[i] + KL14*pycuda::conj<double>(KR11)*W23[i] + pycuda::conj<double>(KL11)*pycuda::conj<double>(KR11)*W33[i];
+			W34_ = KL14*KR14*pycuda::conj<double>(W12[i]) + KR14*pycuda::conj<double>(KL11)*pycuda::conj<double>(W13[i]) + KL14*pycuda::conj<double>(KR11)*W24[i] + pycuda::conj<double>(KL11)*pycuda::conj<double>(KR11)*W34[i];
+			W44_ = KR14*pycuda::conj<double>(KL11)*pycuda::conj<double>(W14[i]) - KR14*pycuda::conj<double>(KL14)*W11[i] - pycuda::conj<double>(KL14)*pycuda::conj<double>(KR11)*W14[i] + pycuda::conj<double>(KL11)*pycuda::conj<double>(KR11)*W44[i];
 
-			W11[i] = W11_;
-			W12[i] = W12_;
-			W13[i] = W13_;
-			W14[i] = W14_;
+			W11[i] = r*W11_;
+			W12[i] = r*W12_;
+			W13[i] = r*W13_;
+			W14[i] = r*W14_;
 
-			W22[i] = W22_;
-			W23[i] = W23_;
-			W24[i] = W24_;
+			W22[i] = r*W22_;
+			W23[i] = r*W23_;
+			W24[i] = r*W24_;
 
-			W33[i] = W33_;
-			W34[i] = W34_;
+			W33[i] = r*W33_;
+			W34[i] = r*W34_;
 
-			W44[i] = W44_;	
+			W44[i] = r*W44_;	
 			"""
   		       ,"exp_p_lambda_GPU",
 			preamble = "#define _USE_MATH_DEFINES\n" + self.CUDA_constants +kineticStringC ) 
 
-
-		self.exp_p_lambda_minus_GPU = ElementwiseKernel(
- """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
-                                  pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
-							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
-											      pycuda::complex<double> *W44"""
-			,
-			indexUnpack_lambda_p_string + """ 				
- 			double p_x_minus  = p_x - 0.5*HBar*lambda_x;
-			double p_y_minus  = p_y - 0.5*HBar*lambda_y;
-			
-			double  r  = exp( - 0.5*dt*D_lambda_x*pow(lambda_x,2) - 0.5*dt*D_lambda_y*pow(lambda_y,2) );
-
-			pycuda::complex<double> k11 = K11(p_x_minus,p_y_minus, 0.5*mass,-dt);
-			pycuda::complex<double> k22 = K22(p_x_minus,p_y_minus, 0.5*mass,-dt);
-			pycuda::complex<double> k14 = K14(p_x_minus,p_y_minus, 0.5*mass,-dt);  
-			pycuda::complex<double> k23 = K23(p_x_minus,p_y_minus, 0.5*mass,-dt);
-
-			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
-			
-			W11_=k11*W11[i] + k23*W14[i];
-			W12_=k11*W12[i] + k14*W13[i];
-			W13_=k23*W12[i] + k22*W13[i];
-			W14_=k14*W11[i] + k22*W14[i];
-			W22_=k11*W22[i] + k14*W23[i];
-			W23_=k23*W22[i] + k22*W23[i];
-			W24_=k14*pycuda::conj<double>(W12[i]) + k22*W24[i];
-			W33_=k23*pycuda::conj<double>(W23[i]) + k22*W33[i];
-			W34_=k14*pycuda::conj<double>(W13[i]) + k22*W34[i];
-			W44_=k14*pycuda::conj<double>(W14[i]) + k22*W44[i];
-
-			W11[i] = W11_;
-			W12[i] = W12_;
-			W13[i] = W13_;
-			W14[i] = W14_;
-
-			W22[i] = W22_;
-			W23[i] = W23_;
-			W24[i] = W24_;
-
-			W33[i] = W33_;
-			W34[i] = W34_;
-
-			W44[i] = W44_;	
-			"""
-  		       ,"exp_p_lambda_GPU", preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants +kineticStringC ) 
 
 		# ....................................................................................................
 		#
@@ -395,7 +346,7 @@ __device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double 
 
 		potentialStringC = potentialString012C + """
 		__device__ double F(double t, double x, double y, double m) {
- 			return sqrt(pow(A1(t,x,y),2) + pow(A2(t,x,y),2) + pow(c,2)*pow(m,2));}
+ 			return sqrt(pow(A1(t,x,y),2) + pow(A2(t,x,y),2) + pow(m*c,2));}
 
 		__device__ pycuda::complex<double> V11 (double t, double x, double y, double m, double dt){
  	return  pycuda::complex<double>(cos((c*dt*F(t,x,y,m))/HBar),-((c*m*sin((c*dt*F(t,x,y,m))/HBar))/F(t,x,y,m)));}
@@ -405,106 +356,76 @@ __device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double 
 		"""
 
 
-		self.exp_x_theta_minus_GPU = ElementwiseKernel(
+		self.exp_theta_x_GPU = ElementwiseKernel(
  """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
                                   pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
 							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
 											      pycuda::complex<double> *W44,
  double t"""
 			,
-			indexUnpack_x_theta_string + """ 
-			double  r  = exp( - 0.5*dt*D_theta_x*pow(theta_x,2) - 0.5*dt*D_theta_y*pow(theta_y,2) );
+			indexUnpack_lambda_p_string + """ 				
+ 			double x_plus   = x + 0.5*HBar*theta_x;
+			double y_plus   = y + 0.5*HBar*theta_y;
+			double x_minus  = x - 0.5*HBar*theta_x;
+			double y_minus  = y - 0.5*HBar*theta_y;
+
+			double  r  = exp( - dt*D_theta_x*pow(theta_x,2) - dt*D_theta_y*pow(theta_y,2) );
+
+			double phase = dt*( A0(t,x_minus,y_minus) - A0(t,x_plus,y_plus) );
+
+			pycuda::complex<double> expA0 = r*pycuda::complex<double>( cos(phase), sin(phase) );
+
+			pycuda::complex<double> VL11 = V11(x_minus,y_minus, mass,dt);
+			pycuda::complex<double> VL14 = V14(x_minus,y_minus, mass,dt);  
+
+			pycuda::complex<double> VR11 = V11(x_plus,y_plus, mass, -dt);
+			pycuda::complex<double> VR14 = V14(x_plus,y_plus, mass, -dt);  
 
 			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
+			pycuda::complex<double> W11__, W12__, W13__, W14__,  W22__, W23__, W24__, W33__, W34__, W44__;
 
-			double x_minus = x - 0.5*HBar*theta_x;
-			double y_minus = y - 0.5*HBar*theta_y;
+			W11_ = W11[i];
+			W12_ = W12[i]; 
+			W13_ = W13[i]; 
+			W14_ = W14[i];
 
-			pycuda::complex<double> v11 = V11(t,x_minus,y_minus, 0.5*mass,dt);
-			pycuda::complex<double> v14 = V14(t,x_minus,y_minus, 0.5*mass,dt);
+			W22_ = W22[i];
+			W23_ = W23[i];
+			W24_ = W24[i];
 
-			W11_=v14*pycuda::conj<double>(W14[i]) + v11*W11[i];
-			W12_=v14*pycuda::conj<double>(W24[i]) + v11*W12[i];
-			W13_=v14*pycuda::conj<double>(W34[i]) + v11*W13[i];
-			W14_=v11*W14[i] + v14*W44[i];
-			W22_=-(pycuda::conj<double>(v14)*pycuda::conj<double>(W23[i])) + v11*W22[i];
-			W23_=v11*W23[i] - pycuda::conj<double>(v14)*W33[i];
-			W24_=v11*W24[i] - pycuda::conj<double>(v14)*W34[i];
-			W33_=v14*W23[i] + pycuda::conj<double>(v11)*W33[i];
-			W34_=v14*W24[i] + pycuda::conj<double>(v11)*W34[i];
-			W44_=-(pycuda::conj<double>(v14)*W14[i]) + pycuda::conj<double>(v11)*W44[i];
+			W33_ = W33[i];
+			W34_ = W34[i];
 
-			pycuda::complex<double> expA0 = r;
+			W44_ = W44[i];
 
-			W11[i] = expA0*W11_;
-			W12[i] = expA0*W12_;
-			W13[i] = expA0*W13_;
-			W14[i] = expA0*W14_;
+			W11__ = VL14*VR11*pycuda::conj<double>(W14_) + VL11*VR11*W11_ - VL11*pycuda::conj<double>(VR14)*W14_ - VL14*pycuda::conj<double>(VR14)*W44_;
+W12__ = VL14*VR11*pycuda::conj<double>(W24_) + VL14*VR14*pycuda::conj<double>(W34_) + VL11*VR11*W12_ + VL11*VR14*W13_;
+W13__ = -(VL14*pycuda::conj<double>(VR14)*pycuda::conj<double>(W24_)) + VL14*pycuda::conj<double>(VR11)*pycuda::conj<double>(W34_) - VL11*pycuda::conj<double>(VR14)*W12_ + VL11*pycuda::conj<double>(VR11)*W13_;
+W14__ = VL14*VR14*pycuda::conj<double>(W14_) + VL11*VR14*W11_ + VL11*pycuda::conj<double>(VR11)*W14_ + VL14*pycuda::conj<double>(VR11)*W44_;
+W22__ = -(VR11*pycuda::conj<double>(VL14)*pycuda::conj<double>(W23_)) + VL11*VR11*W22_ + VL11*VR14*W23_ - VR14*pycuda::conj<double>(VL14)*W33_;
+W23__ = pycuda::conj<double>(VL14)*pycuda::conj<double>(VR14)*pycuda::conj<double>(W23_) - VL11*pycuda::conj<double>(VR14)*W22_ + VL11*pycuda::conj<double>(VR11)*W23_ - pycuda::conj<double>(VL14)*pycuda::conj<double>(VR11)*W33_;
+W24__ = VL11*VR14*pycuda::conj<double>(W12_) - VR14*pycuda::conj<double>(VL14)*pycuda::conj<double>(W13_) + VL11*pycuda::conj<double>(VR11)*W24_ - pycuda::conj<double>(VL14)*pycuda::conj<double>(VR11)*W34_;
+W33__ = -(pycuda::conj<double>(VL11)*pycuda::conj<double>(VR14)*pycuda::conj<double>(W23_)) - VL14*pycuda::conj<double>(VR14)*W22_ + VL14*pycuda::conj<double>(VR11)*W23_ + pycuda::conj<double>(VL11)*pycuda::conj<double>(VR11)*W33_;
+W34__ = VL14*VR14*pycuda::conj<double>(W12_) + VR14*pycuda::conj<double>(VL11)*pycuda::conj<double>(W13_) + VL14*pycuda::conj<double>(VR11)*W24_ + pycuda::conj<double>(VL11)*pycuda::conj<double>(VR11)*W34_;
+W44__ = VR14*pycuda::conj<double>(VL11)*pycuda::conj<double>(W14_) - VR14*pycuda::conj<double>(VL14)*W11_ - pycuda::conj<double>(VL14)*pycuda::conj<double>(VR11)*W14_ + pycuda::conj<double>(VL11)*pycuda::conj<double>(VR11)*W44_;
 
-			W22[i] = expA0*W22_;
-			W23[i] = expA0*W23_;
-			W24[i] = expA0*W24_;
+			W11[i] = expA0*W11__;
+			W12[i] = expA0*W12__;
+			W13[i] = expA0*W13__;
+			W14[i] = expA0*W14__;
 
-			W33[i] = expA0*W33_;
-			W34[i] = expA0*W34_;
+			W22[i] = expA0*W22__;
+			W23[i] = expA0*W23__;
+			W24[i] = expA0*W24__;
 
-			W44[i] = expA0*W44_;	
+			W33[i] = expA0*W33__;
+			W34[i] = expA0*W34__;
 
+			W44[i] = expA0*W44__;
+	
 			"""
-  		       ,"exp_x_theta_minus_GPU",
-			preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants + potentialStringC ) 
-
-		self.exp_x_theta_plus_GPU = ElementwiseKernel(
- """pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<double> *W13, pycuda::complex<double> *W14, 
-                                  pycuda::complex<double> *W22, pycuda::complex<double> *W23, pycuda::complex<double> *W24,
-							        pycuda::complex<double> *W33, pycuda::complex<double> *W34,
-											      pycuda::complex<double> *W44,
- double t"""
-			,
-			indexUnpack_x_theta_string + """ 
-			double  r  = exp( - 0.5*dt*D_theta_x*pow(theta_x,2) - 0.5*dt*D_theta_y*pow(theta_y,2) );
-
-			pycuda::complex<double> v11, v14;
-			pycuda::complex<double> W11_, W12_, W13_, W14_,  W22_, W23_, W24_, W33_, W34_, W44_;
-
-			double x_plus = x + 0.5*HBar*theta_x;
-			double y_plus = y + 0.5*HBar*theta_y;
-
-			v11 = V11(t,x_plus , y_plus, 0.5*mass,-dt);
-			v14 = V14(t,x_plus , y_plus, 0.5*mass,-dt);
-
-
-			W11_=v11*W11[i] - pycuda::conj<double>(v14)*W14[i];
-			W12_=v11*W12[i] + v14*W13[i];
-			W13_=-(pycuda::conj<double>(v14)*W12[i]) + pycuda::conj<double>(v11)*W13[i];
-			W14_=v14*W11[i] + pycuda::conj<double>(v11)*W14[i];
-			W22_=v11*W22[i] + v14*W23[i];
-			W23_=-(pycuda::conj<double>(v14)*W22[i]) + pycuda::conj<double>(v11)*W23[i];
-			W24_=v14*pycuda::conj<double>(W12[i]) + pycuda::conj<double>(v11)*W24[i];
-			W33_=-(pycuda::conj<double>(v14)*pycuda::conj<double>(W23[i])) + pycuda::conj<double>(v11)*W33[i];
-			W34_=v14*pycuda::conj<double>(W13[i]) + pycuda::conj<double>(v11)*W34[i];
-			W44_=v14*pycuda::conj<double>(W14[i]) + pycuda::conj<double>(v11)*W44[i];
-
-			pycuda::complex<double> expA0 = r;
-
-			W11[i] = expA0*W11_;
-			W12[i] = expA0*W12_;
-			W13[i] = expA0*W13_;
-			W14[i] = expA0*W14_;
-
-			W22[i] = expA0*W22_;
-			W23[i] = expA0*W23_;
-			W24[i] = expA0*W24_;
-
-			W33[i] = expA0*W33_;
-			W34[i] = expA0*W34_;
-
-			W44[i] = expA0*W44_;	
-
-			"""
-  		       ,"exp_x_theta_plus_GPU",
-			preamble = "#define _USE_MATH_DEFINES" + self.CUDA_constants + potentialStringC ) 
-
+  		       ,"exp_p_lambda_GPU",
+			preamble = "#define _USE_MATH_DEFINES\n" + self.CUDA_constants +kineticStringC ) 
 
 		#......................................................................................................
 		#
@@ -514,20 +435,22 @@ __device__ pycuda::complex<double> K23(double p_x, double p_y, double m, double 
 
 		gaussianPsi_ParticleUp = """\n
 
-	__device__ double u0(double u_x,double u_y){ return sqrt( c*c + pow(u_x,2) + pow(u_y,2)  ); }
+	__device__ double u0(double u_x,double u_y){ return sqrt( pow(u_x,2) + pow(u_y,2) + c*c ); }
 
 	__device__ pycuda::complex<double> psi1( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma)
 	{
 		double u0_ = u0(u_x,u_y);
 		double phase = mass*(x*u_x + y*u_y);
 		double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  ) * (c + u0_);
-		return pycuda::complex<double>( r*cos(phase) , r*sin(phase) );}\n
+		return pycuda::complex<double>( r*cos(phase) , r*sin(phase) );
+		}\n
 
 
 	__device__ pycuda::complex<double> psi4( double x, double y , double u_x, double u_y, double x_sigma, double y_sigma){
 		double phase = mass*(x*u_x + y*u_y);
 		double r = exp( -0.5*pow(x/x_sigma,2) -0.5*pow(y/y_sigma,2)  );
-		return pycuda::complex<double>( r*cos(phase)*u_x - r*sin(phase)*u_y , r*sin(phase)*u_x + r*cos(phase)*u_y ) ;}	
+		return r*pycuda::complex<double>( cos(phase)*u_x - sin(phase)*u_y , sin(phase)*u_x + cos(phase)*u_y ) ;
+		}	
 
 	//...................................Majorana...............................
 
@@ -551,6 +474,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		indexUnpack_x_theta_string + """
 		double x_minus = x - 0.5*HBar*theta_x - x_mu;
 		double y_minus = y - 0.5*HBar*theta_y - y_mu;
+
 		double x_plus  = x + 0.5*HBar*theta_x - x_mu;
 		double y_plus  = y + 0.5*HBar*theta_y - y_mu;
  
@@ -737,7 +661,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 
 		self.Average_x_square_GPU = reduction.ReductionKernel( np.float64, neutral="0",
 	       			reduce_expr="a+b", 
-				map_expr = "dV*x(i)*x(i)*pycuda::real<double>(W11[i]+W22[i]+W33[i]+W44[i])",
+				map_expr = "dV*pow(x(i),2)*pycuda::real<double>(W11[i]+W22[i]+W33[i]+W44[i])",
 	     			arguments= diagonalW_string,
 				preamble = "#define _USE_MATH_DEFINES"+phaseSpaceDefine+self.CUDA_constants)
 
@@ -933,7 +857,7 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 		cuda_faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes3, self.NF  )
 		W_gpu /= W_gpu.size
 
-	#................FAFT 64 64 .............................................
+	#................FAFT 64 64 .............................................[ py , y , px , x ]
 
 	def Fourier_X_To_Lambda_64_64_GPU(self, W_gpu ):
 		faft64( int(W_gpu.gpudata), self.dx, self.delta_x, self.FAFT_segment_axes1, self.FAFT_axes3, self.NF )
@@ -947,12 +871,12 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 
 	def Fourier_P_To_Theta_64_64_GPU(self, W_gpu ):
 		faft64(  int(W_gpu.gpudata),  self.dp_x, self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes2, self.NF  )
-		faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes0, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, self.delta_p_y,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
 		W_gpu /= W_gpu.size
 
 	def Fourier_Theta_To_P_64_64_GPU(self, W_gpu ):
 		faft64(  int(W_gpu.gpudata),  self.dp_x, -self.delta_p_x,  self.FAFT_segment_axes1, self.FAFT_axes2, self.NF  )
-		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes3, self.FAFT_axes0, self.NF  )
+		faft64(  int(W_gpu.gpudata),  self.dp_y, -self.delta_p_y,  self.FAFT_segment_axes1, self.FAFT_axes0, self.NF  )
 		W_gpu /= np.sqrt(W_gpu.size)/100.
 		
 	def Fourier_X_To_Lambda_64_64_4x4_GPU(self, W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ):
@@ -1093,16 +1017,15 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 
 			self.Normalize_4x4_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
             			    
-			average_x.append(   self.Average_x_GPU  (W11, W22, W33, W44).get()   )
-			average_p_x.append( self.Average_p_x_GPU(W11, W22, W33, W44).get()   )
-			
-			average_y.append(   self.Average_y_GPU  (W11, W22, W33, W44).get()   )
-			average_p_y.append( self.Average_p_y_GPU(W11, W22, W33, W44).get()   )
-
+			average_x.append(          self.Average_x_GPU          (W11, W22, W33, W44).get() )
+			average_p_x.append(        self.Average_p_x_GPU        (W11, W22, W33, W44).get() )
+			average_p_x_square.append( self.Average_p_x_square_GPU (W11, W22, W33, W44).get() )			
 			average_x_square.append(   self.Average_x_square_GPU   (W11, W22, W33, W44).get() )
-			average_p_x_square.append( self.Average_p_x_square_GPU (W11, W22, W33, W44).get() )
-			average_y_square.append(   self.Average_y_square_GPU   (W11, W22, W33, W44).get() )
-			average_p_y_square.append( self.Average_p_y_square_GPU (W11, W22, W33, W44).get() )
+
+			average_y.append(   	   self.Average_y_GPU  		(W11, W22, W33, W44).get() )
+			average_p_y.append( 	   self.Average_p_y_GPU		(W11, W22, W33, W44).get() )		
+			average_y_square.append(   self.Average_y_square_GPU    (W11, W22, W33, W44).get() )
+			average_p_y_square.append( self.Average_p_y_square_GPU  (W11, W22, W33, W44).get() )
 
 			average_Alpha_1.append( self.Average_Alpha_1_GPU(W14,W23).get()  )	
 			average_Alpha_2.append( self.Average_Alpha_2_GPU(W14,W23).get()  )
@@ -1114,7 +1037,6 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 			# p x  ->  p lambda
 			Fourier_X_To_Lambda(W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 			
-			
 			#........................Filter.....................
 			if self.FilterParticle == 1:
 				sign = np.int32(1)
@@ -1123,25 +1045,24 @@ pycuda::complex<double> *W11, pycuda::complex<double> *W12, pycuda::complex<doub
 				print ' post projection ', self.Norm_4x4_GPU(W11,W22,W33,W44)
 			#...................................................
 
-			self.exp_p_lambda_plus_GPU (  W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
-			self.exp_p_lambda_minus_GPU ( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+			self.exp_p_lambda_GPU (  W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+			
 
+			#Fourier_P_To_Theta( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 )
+			#break
+			
 			# p lambda  ->  theta x
 			Fourier_Lambda_To_X( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+			"""Fourier_Lambda_To_X( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
 
-			#self.Normalize_4x4_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
-			#print '--------------'
-			
+			Fourier_P_To_Theta( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 )  
 
-			"""Fourier_P_To_Theta( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
-			
-			#self.exp_x_theta_minus_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ,t) 
-			#self.exp_x_theta_plus_GPU(  W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ,t) 
+			self.exp_x_theta_minus_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ,t) 
+			self.exp_x_theta_plus_GPU(  W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ,t) 
 
 			# theta x -> p x
-			Fourier_Theta_To_P( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) 
+			Fourier_Theta_To_P( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 )"""
 
-			self.Normalize_4x4_GPU( W11, W12, W13, W14, W22, W23, W24, W33, W34, W44 ) """
 			
 
 			
