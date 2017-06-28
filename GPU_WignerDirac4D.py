@@ -372,6 +372,7 @@ pycuda::complex<double> *W41, pycuda::complex<double> *W42, pycuda::complex<doub
 		#
 		#....................................................................................................
 
+
 		kineticStringC = """ 
 		__device__ double Omega(double p_x, double p_y, double m){ 
 			return  c/HBar*sqrt(pow(m*c,2) + pow(p_x,2) + pow(p_y,2));
@@ -379,14 +380,10 @@ pycuda::complex<double> *W41, pycuda::complex<double> *W42, pycuda::complex<doub
   		
 		kineticStringC += """
 		__device__ pycuda::complex<double> K11(double p1,double p2,double m,double dt){
-			double dOmega =  dt*Omega(p1,p2,m);
-			return pycuda::complex<double>( cos(dOmega) , -pow(c,2)*m*sin(dOmega)/(Omega(p1,p2,m)*HBar)  );
-		}
+	return pycuda::complex<double>(cos(dt*Omega(p1,p2,m)),-((pow(c,2)*m*sin(dt*Omega(p1,p2,m)))/(Omega(p1,p2,m)*HBar)));}
 
 		__device__ pycuda::complex<double> K14(double p1,double p2,double m,double dt){ 
-			double dOmega =  dt*Omega(p1,p2,m);
- 			return pycuda::complex<double>( -c*p2*sin(dOmega), -c*p1*sin(dOmega) / (Omega(p1,p2,m)*HBar) );
-		}
+	return pycuda::complex<double>(-((c*p2*sin(dt*Omega(p1,p2,m)))/(Omega(p1,p2,m)*HBar)),-((c*p1*sin(dt*Omega(p1,p2,m)))/(Omega(p1,p2,m)*HBar)));}
 		"""
 
 		self.exp_p_lambda_GPU = ElementwiseKernel(
@@ -525,7 +522,7 @@ __global__ void Potential_Propagator_Kernel(
 {
   
   int i = threadIdx.x + blockIdx.x*(64) + blockIdx.y*(64*64) + blockIdx.z*(64*64*64);
-  //int i = threadIdx.x + blockIdx.x*(gridDIM_x) + blockIdx.y*(gridDIM_x*gridDIM_x) + blockIdx.z*(gridDIM_x*gridDIM_x*gridDIM_y);
+
 	
   double x       =       dx*( double(threadIdx.x) - 0.5*gridDIM_x  );
   double theta_x = dtheta_x*( double(blockIdx.x)  - 0.5*gridDIM_x  );
