@@ -620,6 +620,7 @@ __global__ void Potential_Propagator_Kernel(
  //...............................
 
   F = sqrt( pow(m*c,2) + pow(A1(0.,x_plus,y_plus),2) + pow(A2(0.,x_plus,y_plus),2)); 
+
   U11 = pycuda::complex<double>( cos(c*dt*F/HBar) ,  m*c*sin(-c*dt*F/HBar)/F );
   U22 = pycuda::complex<double>( cos(c*dt*F/HBar) ,  m*c*sin(-c*dt*F/HBar)/F );
   U33 = pycuda::complex<double>( cos(c*dt*F/HBar) , -m*c*sin(-c*dt*F/HBar)/F );
@@ -1537,6 +1538,8 @@ pycuda::complex<double> *W41, pycuda::complex<double> *W42, pycuda::complex<doub
 		average_D_1_A_1 = []
 		average_D_1_A_2 = []
 
+		skipFrameTime = []
+
 		self.blockCUDA = (self.gridDIM_x,1,1) 
 		self.gridCUDA  = (self.gridDIM_x,self.gridDIM_y,self.gridDIM_y) 
 
@@ -1554,39 +1557,46 @@ pycuda::complex<double> *W41, pycuda::complex<double> *W42, pycuda::complex<doub
 			self.Real_GPU(W33)  
 			self.Real_GPU(W44)
 
-			self.Normalize_4x4_GPU (W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44) 
+			self.Normalize_4x4_GPU (W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44)
+
+			if tIndex%self.skipFrame == 0 :
+	    
+				skipFrameTime.append( tIndex*self.dt )	
             			    
-			average_x.append(          self.Average_x_GPU          (W11, W22, W33, W44).get() )
-			average_p_x.append(        self.Average_p_x_GPU        (W11, W22, W33, W44).get() )
-			average_p_x_square.append( self.Average_p_x_square_GPU (W11, W22, W33, W44).get() )			
-			average_x_square.append(   self.Average_x_square_GPU   (W11, W22, W33, W44).get() )
+				average_x.append(          self.Average_x_GPU          (W11, W22, W33, W44).get() )
+				average_p_x.append(        self.Average_p_x_GPU        (W11, W22, W33, W44).get() )
+				average_p_x_square.append( self.Average_p_x_square_GPU (W11, W22, W33, W44).get() )			
+				average_x_square.append(   self.Average_x_square_GPU   (W11, W22, W33, W44).get() )
 
-			average_y.append(   	   self.Average_y_GPU  		(W11, W22, W33, W44).get() )
-			average_p_y.append( 	   self.Average_p_y_GPU		(W11, W22, W33, W44).get() )		
-			average_y_square.append(   self.Average_y_square_GPU    (W11, W22, W33, W44).get() )
-			average_p_y_square.append( self.Average_p_y_square_GPU  (W11, W22, W33, W44).get() )
+				average_y.append(   	   self.Average_y_GPU  		(W11, W22, W33, W44).get() )
+				average_p_y.append( 	   self.Average_p_y_GPU		(W11, W22, W33, W44).get() )		
+				average_y_square.append(   self.Average_y_square_GPU    (W11, W22, W33, W44).get() )
+				average_p_y_square.append( self.Average_p_y_square_GPU  (W11, W22, W33, W44).get() )
 
-			average_Alpha_1.append( self.Average_Alpha_1_GPU(W14,W41,W23,W32).get()  )	
-			average_Alpha_2.append( self.Average_Alpha_2_GPU(W14,W41,W23,W32).get()  )
+				average_Alpha_1.append( self.Average_Alpha_1_GPU(W14,W41,W23,W32).get()  )	
+				average_Alpha_2.append( self.Average_Alpha_2_GPU(W14,W41,W23,W32).get()  )
 
-			average_Alpha_1_x.append( self.Average_Alpha_1_x_GPU(W14,W41,W23,W32).get()  )	
-			average_Alpha_2_y.append( self.Average_Alpha_2_y_GPU(W14,W41,W23,W32).get()  )
+				average_Alpha_1_x.append( self.Average_Alpha_1_x_GPU(W14,W41,W23,W32).get()  )	
+				average_Alpha_2_y.append( self.Average_Alpha_2_y_GPU(W14,W41,W23,W32).get()  )
 
-			energyKinetic.append(
-			self.Average_EnergyKinetic_GPU(W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44).get())	
+				energyKinetic.append(
+				self.Average_EnergyKinetic_GPU(
+				W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44).get())	
 
-			energyPotential.append(
-			self.Average_EnergyPotential_GPU(W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get())
+				energyPotential.append(
+				self.Average_EnergyPotential_GPU(
+				W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get())
 			
 
-			average_D_1_A_0.append( 
-			self.Average_D_1_A_0_GPU(W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get()  ) 
+				average_D_1_A_0.append( 
+				self.Average_D_1_A_0_GPU(
+				W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get()) 
 
-			average_D_1_A_1.append(
-			self.Average_D_1_A_1_GPU(W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get()  ) 
+				average_D_1_A_1.append(
+				self.Average_D_1_A_1_GPU(W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get()  ) 
 
-			average_D_1_A_2.append(
-			self.Average_D_1_A_2_GPU(W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get()  )
+				average_D_1_A_2.append(
+				self.Average_D_1_A_2_GPU(W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44,t).get()  )
 
 
 			#p x  ->  p lambda
@@ -1617,6 +1627,8 @@ pycuda::complex<double> *W41, pycuda::complex<double> *W42, pycuda::complex<doub
 
 			
 		#self.Normalize_4x4_GPU( W11,W12,W13,W14,W21,W22,W23,W24,W31,W32,W33,W34,W41,W42,W43,W44 ) 
+
+		self.skipFrameTime = np.array(skipFrameTime)
 
 		self.average_x   = np.array(average_x  )
 		self.average_p_x = np.array(average_p_x)
