@@ -1337,7 +1337,7 @@ pycuda::complex<double> *W41, pycuda::complex<double> *W42, pycuda::complex<doub
 
 		self.Average_D_1_A_2_GPU = reduction.ReductionKernel( np.float64, neutral="0",
         			reduce_expr="a+b", 
-				map_expr  =  "c* D_1_A_2 *dV*pycuda::real<double>(  W14[i]-W41[i] -W23[i]+W32[i] )",
+				map_expr  =  "- dV*D_1_A_2*c*pycuda::imag<double>( -W14[i]+W23[i] -W32[i]+W41[i] )",
         			arguments = energyFunction_plus_time_Arguments,
 				preamble  = "#define _USE_MATH_DEFINES\n"+potentialDefines)
 
